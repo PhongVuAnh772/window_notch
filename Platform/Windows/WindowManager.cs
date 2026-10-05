@@ -42,7 +42,7 @@ public sealed class WindowManager : IDisposable
     private const int GWL_STYLE = -16;
     private const int GWL_EXSTYLE = -20;
 
-    private const nint WS_POPUP = unchecked((nint)0x80000000);
+    private static readonly nint WS_POPUP = unchecked((int)0x80000000);
     private const nint WS_CAPTION = 0x00C00000;
     private const nint WS_THICKFRAME = 0x00040000;
     private const nint WS_MINIMIZEBOX = 0x00020000;
