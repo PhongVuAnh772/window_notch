@@ -1614,7 +1614,7 @@ public sealed class NotchAnimator : IDisposable
     {
         try
         {
-            CompositionBrush? backdropBrush = _compositor.TryCreateBlurredWallpaperBackdropBrush();
+            CompositionBrush? backdropBrush = _compositor.CreateBackdropBrush();
             if (backdropBrush is null)
             {
                 return (null, null, false);

@@ -235,7 +235,6 @@ public sealed class WindowsCalendarService : ICalendarService
         options.FetchProperties.Add(AppointmentProperties.StartTime);
         options.FetchProperties.Add(AppointmentProperties.Duration);
         options.FetchProperties.Add(AppointmentProperties.AllDay);
-        options.FetchProperties.Add(AppointmentProperties.CalendarId);
         options.FetchProperties.Add(AppointmentProperties.IsCanceledMeeting);
 
         IReadOnlyList<Appointment>? appointments = await store

@@ -73,7 +73,6 @@ public sealed class NotchController : IDisposable
     private DragDropState _lastCommittedDropState = DragDropState.Empty;
     private bool _isPointerHovered;
     private bool _isUserScreenshotSessionActive;
-    private bool _isDropPreviewSessionActive;
     private bool _isDisposed;
 
     public NotchController()
@@ -569,8 +568,8 @@ public sealed class NotchController : IDisposable
         }
 
         _isPointerHovered = false;
-        CollapseToPreferredRestState();
-        return true;
+        _isUserScreenshotSessionActive = false;
+        return TryTransitionTo(ResolveCollapsedRestState());
     }
 
     public async void OnPointerExited(Func<bool>? isPointerStillInsideCheck = null)
@@ -618,7 +617,6 @@ public sealed class NotchController : IDisposable
 
         _isPointerHovered = false;
         _isUserScreenshotSessionActive = false;
-        _isDropPreviewSessionActive = false;
         TryTransitionTo(ResolveCollapsedRestState());
     }
 
@@ -714,7 +712,6 @@ public sealed class NotchController : IDisposable
         }
 
         _isUserScreenshotSessionActive = true;
-        _isDropPreviewSessionActive = false;
         bool captured = await _screenshotService.CapturePrimaryDisplayAsync();
         if (!captured && !HasActiveScreenshot)
         {
@@ -813,7 +810,6 @@ public sealed class NotchController : IDisposable
         IsNotchVisible = false;
         _isPointerHovered = false;
         _isUserScreenshotSessionActive = false;
-        _isDropPreviewSessionActive = false;
         CancelPendingCollapse();
         TryTransitionTo(ResolveCollapsedRestState());
         _systemTrayService.UpdateNotchVisibility(false);
@@ -906,7 +902,6 @@ public sealed class NotchController : IDisposable
         {
             _isPointerHovered = false;
             _isUserScreenshotSessionActive = false;
-            _isDropPreviewSessionActive = false;
             TryTransitionTo(ResolveCollapsedRestState());
         }
     }
@@ -920,7 +915,6 @@ public sealed class NotchController : IDisposable
 
         _isPointerHovered = true;
         _isUserScreenshotSessionActive = false;
-        _isDropPreviewSessionActive = true;
         CancelPendingCollapse();
         TryTransitionTo(NotchState.DropTarget);
     }
@@ -932,7 +926,6 @@ public sealed class NotchController : IDisposable
             return;
         }
 
-        _isDropPreviewSessionActive = false;
         _dragDropService.Clear();
     }
 
@@ -1158,7 +1151,6 @@ public sealed class NotchController : IDisposable
             _lastCommittedDropState = newDragDropState;
             _isPointerHovered = true;
             _isUserScreenshotSessionActive = false;
-            _isDropPreviewSessionActive = true;
             DragDropStateChanged?.Invoke(this, newDragDropState);
             OnFileDropped(newDragDropState);
         }
@@ -1167,7 +1159,6 @@ public sealed class NotchController : IDisposable
             if (!newDragDropState.HasDropPreview)
             {
                 _lastCommittedDropState = DragDropState.Empty;
-                _isDropPreviewSessionActive = false;
             }
 
             DragDropStateChanged?.Invoke(this, newDragDropState);
