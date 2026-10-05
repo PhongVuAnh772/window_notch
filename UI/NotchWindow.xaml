@@ -1,0 +1,1229 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="WindowsNotch.UI.NotchWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Windows Notch">
+
+    <!-- Notch Root: transparent outer canvas hosting shadow, surface, border, and content layers -->
+    <Grid
+        x:Name="NotchRoot"
+        Background="Transparent">
+
+        <!-- 1. Shadow / Depth Layer (Compositor DropShadow behind the pill surface) -->
+        <Grid
+            x:Name="ShadowLayer"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            IsHitTestVisible="False" />
+
+        <!-- 2. Clipped Pill Surface Container -->
+        <Grid
+            x:Name="NotchSurface"
+            Width="{StaticResource NotchCollapsedWidth}"
+            Height="{StaticResource NotchCollapsedHeight}"
+            Background="Transparent"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            PointerEntered="OnNotchPointerEntered"
+            PointerMoved="OnNotchPointerMoved"
+            PointerExited="OnNotchPointerExited">
+
+            <!-- 2a. Optional Native Composition Glass Backdrop Layer -->
+            <Grid
+                x:Name="BackdropGlassLayer"
+                IsHitTestVisible="False" />
+
+            <!-- 2b. Dark Surface Base (Translucent when glass is active; solid dark fallback otherwise) -->
+            <Border
+                x:Name="SurfaceBaseLayer"
+                Background="{StaticResource NotchSurfaceGlassBrush}"
+                IsHitTestVisible="False" />
+
+            <!-- 2c. Subtle Inner Depth Sheen -->
+            <Border
+                x:Name="SurfaceDepthLayer"
+                Background="{StaticResource NotchInnerDepthBrush}"
+                IsHitTestVisible="False" />
+
+            <!-- 3. Border / Highlight Layer (1px Compositor Rounded Pill Stroke) -->
+            <Grid
+                x:Name="BorderHighlightLayer"
+                IsHitTestVisible="False" />
+
+            <!-- 4. Content Layer (Clock View + Media Hover/Expanded View + Clipboard Hover View + Screenshot Hover View + DropTarget View + Calendar Hover View) -->
+            <Grid
+                x:Name="ContentHost"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+
+                <!-- 4a. Clock View (Idle / Collapsed Media, Clipboard, Screenshot, Drop, or Calendar Indicator + Time) -->
+                <StackPanel
+                    x:Name="ClockViewHost"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="{StaticResource Spacing8}"
+                    IsHitTestVisible="False">
+
+                    <TextBlock
+                        x:Name="CollapsedMediaIndicator"
+                        Text="&#x266A;"
+                        FontFamily="{StaticResource NotchFontFamily}"
+                        FontSize="{StaticResource FontSizeCaption}"
+                        FontWeight="Medium"
+                        Foreground="{StaticResource NotchAccentBrush}"
+                        VerticalAlignment="Center"
+                        TextLineBounds="Tight"
+                        OpticalMarginAlignment="TrimSideBearings"
+                        Visibility="Collapsed" />
+
+                    <Path
+                        x:Name="CollapsedClipboardIndicator"
+                        Width="{StaticResource ClipboardCollapsedIconSize}"
+                        Height="{StaticResource ClipboardCollapsedIconSize}"
+                        Stretch="Uniform"
+                        Fill="{StaticResource NotchSecondaryBrush}"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed"
+                        Data="M 3.5,1 L 6.5,1 L 6.5,2.2 L 8.2,2.2 L 8.2,9.2 L 1.8,9.2 L 1.8,2.2 L 3.5,2.2 Z M 3,3.4 L 3,8 L 7,8 L 7,3.4 Z" />
+
+                    <Path
+                        x:Name="CollapsedScreenshotIndicator"
+                        Width="{StaticResource ScreenshotCollapsedIconSize}"
+                        Height="{StaticResource ScreenshotCollapsedIconSize}"
+                        Stretch="Uniform"
+                        Fill="{StaticResource NotchSecondaryBrush}"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed"
+                        Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+
+                    <Path
+                        x:Name="CollapsedDropIndicator"
+                        Width="{StaticResource DropCollapsedIconSize}"
+                        Height="{StaticResource DropCollapsedIconSize}"
+                        Stretch="Uniform"
+                        Fill="{StaticResource NotchSecondaryBrush}"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed"
+                        Data="M 2,1 L 6,1 L 8.5,3.5 L 8.5,9 L 2,9 Z M 5.5,1.8 L 5.5,4 L 7.7,4 Z" />
+
+                    <Path
+                        x:Name="CollapsedCalendarIndicator"
+                        Width="{StaticResource CalendarCollapsedIconSize}"
+                        Height="{StaticResource CalendarCollapsedIconSize}"
+                        Stretch="Uniform"
+                        Fill="{StaticResource NotchAccentBrush}"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed"
+                        Data="M 2.5,0.8 L 3.7,0.8 L 3.7,2 L 6.3,2 L 6.3,0.8 L 7.5,0.8 L 7.5,2 L 8.8,2 L 8.8,9 L 1.2,9 L 1.2,2 L 2.5,2 Z M 2.2,4.2 L 2.2,8 L 7.8,8 L 7.8,4.2 Z" />
+
+                    <Grid
+                        x:Name="ClockTextHost"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center">
+                        <TextBlock
+                            x:Name="ClockPrimaryText"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeBody}"
+                            FontWeight="Medium"
+                            Foreground="{StaticResource NotchPrimaryBrush}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            TextLineBounds="Tight"
+                            OpticalMarginAlignment="TrimSideBearings"
+                            Typography.NumeralAlignment="Tabular" />
+                        <TextBlock
+                            x:Name="ClockSecondaryText"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeBody}"
+                            FontWeight="Medium"
+                            Foreground="{StaticResource NotchPrimaryBrush}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            TextLineBounds="Tight"
+                            OpticalMarginAlignment="TrimSideBearings"
+                            Typography.NumeralAlignment="Tabular" />
+                    </Grid>
+
+                    <TextBlock
+                        x:Name="CollapsedCalendarTimeText"
+                        FontFamily="{StaticResource NotchFontFamily}"
+                        FontSize="{StaticResource FontSizeBody}"
+                        FontWeight="Medium"
+                        Foreground="{StaticResource NotchPrimaryBrush}"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        MaxWidth="104"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="NoWrap"
+                        MaxLines="1"
+                        TextLineBounds="Tight"
+                        OpticalMarginAlignment="TrimSideBearings"
+                        Typography.NumeralAlignment="Tabular"
+                        Visibility="Collapsed" />
+                </StackPanel>
+
+                <!-- 4a-action. Subtle Screenshot Capture Action in Clock Hover (220x44) -->
+                <Grid
+                    x:Name="ClockHoverScreenshotActionHost"
+                    Width="{StaticResource NotchHoverWidth}"
+                    Height="{StaticResource NotchHoverHeight}"
+                    Padding="{StaticResource ClockHoverPadding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
+                    IsHitTestVisible="False">
+                    <Button
+                        x:Name="ClockScreenshotButton"
+                        Style="{StaticResource NotchMediaTransportButtonStyle}"
+                        AutomationProperties.Name="Capture screenshot"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center"
+                        Click="OnScreenshotCaptureButtonClick"
+                        PointerEntered="OnTransportButtonPointerEntered"
+                        PointerExited="OnTransportButtonPointerExited"
+                        PointerCanceled="OnTransportButtonPointerCanceled"
+                        PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                        <Grid
+                            Width="{StaticResource MediaControlButtonSize}"
+                            Height="{StaticResource MediaControlButtonSize}">
+                            <Border
+                                x:Name="ClockScreenshotButtonBg"
+                                CornerRadius="{StaticResource Radius8}"
+                                Background="{StaticResource NotchElevatedBrush}" />
+                            <Path
+                                x:Name="ClockScreenshotButtonIcon"
+                                Width="{StaticResource ScreenshotActionIconSize}"
+                                Height="{StaticResource ScreenshotActionIconSize}"
+                                Stretch="Uniform"
+                                Fill="{StaticResource NotchPrimaryBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                        </Grid>
+                    </Button>
+                </Grid>
+
+                <!-- 4b. Media Hover (220x44) & Expanded (380x88) View -->
+                <Grid
+                    x:Name="MediaViewHost"
+                    Width="{StaticResource NotchHoverWidth}"
+                    Height="{StaticResource NotchHoverHeight}"
+                    Padding="{StaticResource MediaHoverPadding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Row 0: Header ([Artwork + Title/Artist] + [‹ ▶/❚❚ ›]) -->
+                    <Grid
+                        Grid.Row="0"
+                        VerticalAlignment="Center"
+                        ColumnSpacing="{StaticResource Spacing8}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Clickable Metadata / Artwork Region (expands panel when clicked in Hover state) -->
+                        <Grid
+                            x:Name="MediaMetadataClickTarget"
+                            Grid.Column="0"
+                            Background="Transparent"
+                            VerticalAlignment="Center"
+                            ColumnSpacing="{StaticResource Spacing8}"
+                            IsHitTestVisible="False"
+                            AutomationProperties.Name="Expand media timeline"
+                            PointerPressed="OnMediaMetadataPointerPressed"
+                            PointerReleased="OnMediaMetadataPointerReleased"
+                            PointerCanceled="OnMediaMetadataPointerCanceled"
+                            PointerCaptureLost="OnMediaMetadataPointerCaptureLost">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Rounded Album Artwork (28x28 in Hover, 40x40 in Expanded) -->
+                            <Border
+                                x:Name="MediaArtworkHost"
+                                Grid.Column="0"
+                                Width="{StaticResource MediaHoverArtworkSize}"
+                                Height="{StaticResource MediaHoverArtworkSize}"
+                                CornerRadius="{StaticResource Radius8}"
+                                Background="{StaticResource NotchElevatedBrush}"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False">
+                                <Grid>
+                                    <TextBlock
+                                        x:Name="MediaArtworkFallbackIcon"
+                                        Text="&#x266A;"
+                                        FontFamily="{StaticResource NotchFontFamily}"
+                                        FontSize="{StaticResource FontSizeSecondary}"
+                                        Foreground="{StaticResource NotchSecondaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        TextLineBounds="Tight" />
+                                    <Border
+                                        x:Name="MediaArtworkImageClip"
+                                        CornerRadius="{StaticResource Radius8}"
+                                        Visibility="Collapsed">
+                                        <Image
+                                            x:Name="MediaArtworkImage"
+                                            Stretch="UniformToFill"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <!-- Song Title & Artist Metadata -->
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Vertical"
+                                VerticalAlignment="Center"
+                                Spacing="{StaticResource MediaMetadataStackSpacing}"
+                                IsHitTestVisible="False">
+                                <TextBlock
+                                    x:Name="MediaTitleText"
+                                    FontFamily="{StaticResource NotchFontFamily}"
+                                    FontSize="{StaticResource FontSizeSecondary}"
+                                    FontWeight="Medium"
+                                    Foreground="{StaticResource NotchPrimaryBrush}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="NoWrap"
+                                    MaxLines="1"
+                                    TextLineBounds="Tight" />
+                                <TextBlock
+                                    x:Name="MediaArtistText"
+                                    FontFamily="{StaticResource NotchFontFamily}"
+                                    FontSize="{StaticResource FontSizeCaption}"
+                                    FontWeight="Normal"
+                                    Foreground="{StaticResource NotchSecondaryBrush}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="NoWrap"
+                                    MaxLines="1"
+                                    TextLineBounds="Tight" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Subtle Media Playback Controls: Previous, Play/Pause, Next -->
+                        <StackPanel
+                            x:Name="MediaControlsHost"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Spacing="{StaticResource MediaControlButtonSpacing}"
+                            IsHitTestVisible="False">
+
+                            <Button
+                                x:Name="PreviousTrackButton"
+                                Style="{StaticResource NotchMediaTransportButtonStyle}"
+                                AutomationProperties.Name="Previous track"
+                                IsEnabled="False"
+                                Click="OnPreviousTrackButtonClick"
+                                PointerEntered="OnTransportButtonPointerEntered"
+                                PointerExited="OnTransportButtonPointerExited"
+                                PointerCanceled="OnTransportButtonPointerCanceled"
+                                PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                                <Grid
+                                    Width="{StaticResource MediaControlButtonSize}"
+                                    Height="{StaticResource MediaControlButtonSize}">
+                                    <Border
+                                        x:Name="PreviousButtonBg"
+                                        CornerRadius="{StaticResource Radius8}"
+                                        Background="{StaticResource NotchElevatedBrush}" />
+                                    <Path
+                                        x:Name="PreviousButtonIcon"
+                                        Width="{StaticResource MediaControlIconSize}"
+                                        Height="{StaticResource MediaControlIconSize}"
+                                        Stretch="Uniform"
+                                        Fill="{StaticResource NotchPrimaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Data="M 1.5,1.5 L 3,1.5 L 3,8.5 L 1.5,8.5 Z M 3.5,5 L 8.5,1.5 L 8.5,8.5 Z" />
+                                </Grid>
+                            </Button>
+
+                            <Button
+                                x:Name="PlayPauseButton"
+                                Style="{StaticResource NotchMediaTransportButtonStyle}"
+                                AutomationProperties.Name="Play"
+                                IsEnabled="False"
+                                Click="OnPlayPauseButtonClick"
+                                PointerEntered="OnTransportButtonPointerEntered"
+                                PointerExited="OnTransportButtonPointerExited"
+                                PointerCanceled="OnTransportButtonPointerCanceled"
+                                PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                                <Grid
+                                    Width="{StaticResource MediaControlButtonSize}"
+                                    Height="{StaticResource MediaControlButtonSize}">
+                                    <Border
+                                        x:Name="PlayPauseButtonBg"
+                                        CornerRadius="{StaticResource Radius8}"
+                                        Background="{StaticResource NotchElevatedBrush}" />
+                                    <Grid
+                                        x:Name="PlayPauseButtonIconHost"
+                                        Width="{StaticResource MediaControlIconSize}"
+                                        Height="{StaticResource MediaControlIconSize}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center">
+                                        <Path
+                                            x:Name="PlayIconPath"
+                                            Stretch="Uniform"
+                                            Fill="{StaticResource NotchPrimaryBrush}"
+                                            Data="M 2.5,1.2 L 9,5 L 2.5,8.8 Z" />
+                                        <Path
+                                            x:Name="PauseIconPath"
+                                            Stretch="Uniform"
+                                            Fill="{StaticResource NotchPrimaryBrush}"
+                                            Visibility="Collapsed"
+                                            Data="M 2,1.5 L 4.2,1.5 L 4.2,8.5 L 2,8.5 Z M 5.8,1.5 L 8,1.5 L 8,8.5 L 5.8,8.5 Z" />
+                                    </Grid>
+                                </Grid>
+                            </Button>
+
+                            <Button
+                                x:Name="NextTrackButton"
+                                Style="{StaticResource NotchMediaTransportButtonStyle}"
+                                AutomationProperties.Name="Next track"
+                                IsEnabled="False"
+                                Click="OnNextTrackButtonClick"
+                                PointerEntered="OnTransportButtonPointerEntered"
+                                PointerExited="OnTransportButtonPointerExited"
+                                PointerCanceled="OnTransportButtonPointerCanceled"
+                                PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                                <Grid
+                                    Width="{StaticResource MediaControlButtonSize}"
+                                    Height="{StaticResource MediaControlButtonSize}">
+                                    <Border
+                                        x:Name="NextButtonBg"
+                                        CornerRadius="{StaticResource Radius8}"
+                                        Background="{StaticResource NotchElevatedBrush}" />
+                                    <Path
+                                        x:Name="NextButtonIcon"
+                                        Width="{StaticResource MediaControlIconSize}"
+                                        Height="{StaticResource MediaControlIconSize}"
+                                        Stretch="Uniform"
+                                        Fill="{StaticResource NotchPrimaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Data="M 1.5,1.5 L 6.5,5 L 1.5,8.5 Z M 7,1.5 L 8.5,1.5 L 8.5,8.5 L 7,8.5 Z" />
+                                </Grid>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Row 1: Expanded Media Timeline & Seek Bar (0:42 ━━━━━●━━━━━ 3:28) -->
+                    <Grid
+                        x:Name="MediaTimelineRow"
+                        Grid.Row="1"
+                        Height="{StaticResource SeekHitTargetHeight}"
+                        Margin="0,8,0,0"
+                        VerticalAlignment="Center"
+                        ColumnSpacing="{StaticResource Spacing8}"
+                        Visibility="Collapsed"
+                        IsHitTestVisible="False">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            x:Name="MediaElapsedText"
+                            Grid.Column="0"
+                            Text="0:00"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeCaption}"
+                            FontWeight="Normal"
+                            Foreground="{StaticResource NotchSecondaryBrush}"
+                            VerticalAlignment="Center"
+                            TextLineBounds="Tight"
+                            OpticalMarginAlignment="TrimSideBearings"
+                            Typography.NumeralAlignment="Tabular"
+                            IsHitTestVisible="False" />
+
+                        <Grid
+                            x:Name="SeekInteractiveSurface"
+                            Grid.Column="1"
+                            Height="{StaticResource SeekHitTargetHeight}"
+                            Background="Transparent"
+                            VerticalAlignment="Center"
+                            IsHitTestVisible="False"
+                            AutomationProperties.Name="Seek position"
+                            PointerEntered="OnSeekSurfacePointerEntered"
+                            PointerExited="OnSeekSurfacePointerExited"
+                            PointerPressed="OnSeekSurfacePointerPressed"
+                            PointerMoved="OnSeekSurfacePointerMoved"
+                            PointerReleased="OnSeekSurfacePointerReleased"
+                            PointerCanceled="OnSeekSurfacePointerCanceled"
+                            PointerCaptureLost="OnSeekSurfacePointerCaptureLost">
+
+                            <!-- Subtle Inactive Track -->
+                            <Border
+                                x:Name="SeekTrackBackground"
+                                Height="{StaticResource SeekTrackHeight}"
+                                CornerRadius="{StaticResource RadiusSeekTrack}"
+                                Background="{StaticResource NotchSecondaryBrush}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                IsHitTestVisible="False" />
+
+                            <!-- Active Progress Bar (clipped on the Compositor thread) -->
+                            <Border
+                                x:Name="SeekTrackFill"
+                                Height="{StaticResource SeekTrackHeight}"
+                                CornerRadius="{StaticResource RadiusSeekTrack}"
+                                Background="{StaticResource NotchPrimaryBrush}"
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Stretch"
+                                IsHitTestVisible="False" />
+
+                            <!-- Small Circular Thumb (translated on the Compositor thread) -->
+                            <Canvas
+                                VerticalAlignment="Center"
+                                HorizontalAlignment="Left"
+                                Width="0"
+                                Height="0"
+                                IsHitTestVisible="False">
+                                <Border
+                                    x:Name="SeekThumb"
+                                    Width="{StaticResource SeekThumbSize}"
+                                    Height="{StaticResource SeekThumbSize}"
+                                    CornerRadius="{StaticResource RadiusSeekThumb}"
+                                    Background="{StaticResource NotchPrimaryBrush}"
+                                    Canvas.Left="-4"
+                                    Canvas.Top="-4" />
+                            </Canvas>
+                        </Grid>
+
+                        <TextBlock
+                            x:Name="MediaDurationText"
+                            Grid.Column="2"
+                            Text="0:00"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeCaption}"
+                            FontWeight="Normal"
+                            Foreground="{StaticResource NotchSecondaryBrush}"
+                            VerticalAlignment="Center"
+                            TextLineBounds="Tight"
+                            OpticalMarginAlignment="TrimSideBearings"
+                            Typography.NumeralAlignment="Tabular"
+                            IsHitTestVisible="False" />
+                    </Grid>
+                </Grid>
+
+                <!-- 4c. Clipboard Hover Preview (220x44: [28x28 Icon or Image Preview] + [Single-Line Preview Text] + [Screenshot Action]) -->
+                <Grid
+                    x:Name="ClipboardHoverViewHost"
+                    Width="{StaticResource NotchHoverWidth}"
+                    Height="{StaticResource NotchHoverHeight}"
+                    Padding="{StaticResource ClipboardHoverPadding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    ColumnSpacing="{StaticResource Spacing8}"
+                    IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Rounded 28x28 Clipboard Preview Badge (Icon or Image Thumbnail) -->
+                    <Border
+                        x:Name="ClipboardPreviewBadgeHost"
+                        Grid.Column="0"
+                        Width="{StaticResource ClipboardHoverPreviewSize}"
+                        Height="{StaticResource ClipboardHoverPreviewSize}"
+                        CornerRadius="{StaticResource Radius8}"
+                        Background="{StaticResource NotchElevatedBrush}"
+                        VerticalAlignment="Center"
+                        IsHitTestVisible="False">
+                        <Grid>
+                            <!-- Vector Clipboard Icon (for Text / Unsupported) -->
+                            <Path
+                                x:Name="ClipboardTextBadgeIcon"
+                                Width="{StaticResource ClipboardHoverIconSize}"
+                                Height="{StaticResource ClipboardHoverIconSize}"
+                                Stretch="Uniform"
+                                Fill="{StaticResource NotchSecondaryBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="M 3.5,1 L 6.5,1 L 6.5,2.2 L 8.2,2.2 L 8.2,9.2 L 1.8,9.2 L 1.8,2.2 L 3.5,2.2 Z M 3,3.4 L 3,8 L 7,8 L 7,3.4 Z" />
+
+                            <!-- Vector Image Icon Fallback (when ClipboardContentType.Image has no decoded thumbnail) -->
+                            <Path
+                                x:Name="ClipboardImageFallbackIcon"
+                                Width="{StaticResource ClipboardHoverIconSize}"
+                                Height="{StaticResource ClipboardHoverIconSize}"
+                                Stretch="Uniform"
+                                Fill="{StaticResource NotchSecondaryBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Visibility="Collapsed"
+                                Data="M 1.2,2 L 8.8,2 L 8.8,8 L 1.2,8 Z M 2.2,6.8 L 4,4.6 L 5.4,6.1 L 6.6,4.9 L 7.8,6.8 Z" />
+
+                            <!-- Rounded Image Thumbnail Preview -->
+                            <Border
+                                x:Name="ClipboardImagePreviewClip"
+                                CornerRadius="{StaticResource Radius8}"
+                                Visibility="Collapsed">
+                                <Image
+                                    x:Name="ClipboardPreviewImage"
+                                    Stretch="UniformToFill"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Single-Line Trimmed Clipboard Preview Text -->
+                    <TextBlock
+                        x:Name="ClipboardPreviewText"
+                        Grid.Column="1"
+                        FontFamily="{StaticResource NotchFontFamily}"
+                        FontSize="{StaticResource FontSizeSecondary}"
+                        FontWeight="Medium"
+                        Foreground="{StaticResource NotchPrimaryBrush}"
+                        VerticalAlignment="Center"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="NoWrap"
+                        MaxLines="1"
+                        TextLineBounds="Tight" />
+
+                    <!-- Subtle Screenshot Action Button in Clipboard Hover -->
+                    <Button
+                        x:Name="ClipboardScreenshotButton"
+                        Grid.Column="2"
+                        Style="{StaticResource NotchMediaTransportButtonStyle}"
+                        AutomationProperties.Name="Capture screenshot"
+                        VerticalAlignment="Center"
+                        Click="OnScreenshotCaptureButtonClick"
+                        PointerEntered="OnTransportButtonPointerEntered"
+                        PointerExited="OnTransportButtonPointerExited"
+                        PointerCanceled="OnTransportButtonPointerCanceled"
+                        PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                        <Grid
+                            Width="{StaticResource MediaControlButtonSize}"
+                            Height="{StaticResource MediaControlButtonSize}">
+                            <Border
+                                x:Name="ClipboardScreenshotButtonBg"
+                                CornerRadius="{StaticResource Radius8}"
+                                Background="{StaticResource NotchElevatedBrush}" />
+                            <Path
+                                x:Name="ClipboardScreenshotButtonIcon"
+                                Width="{StaticResource ScreenshotActionIconSize}"
+                                Height="{StaticResource ScreenshotActionIconSize}"
+                                Stretch="Uniform"
+                                Fill="{StaticResource NotchPrimaryBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                        </Grid>
+                    </Button>
+                </Grid>
+
+                <!-- 4d. Screenshot Hover Preview (220x44: [Aspect-Ratio Thumbnail] + [Screenshot + Dimensions] + [Recapture Action]) -->
+                <Grid
+                    x:Name="ScreenshotPreviewViewHost"
+                    Width="{StaticResource NotchHoverWidth}"
+                    Height="{StaticResource NotchHoverHeight}"
+                    Padding="{StaticResource ScreenshotHoverPadding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    ColumnSpacing="{StaticResource Spacing8}"
+                    IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Rounded Compact Screenshot Thumbnail (max 44x28 preserving aspect ratio) -->
+                    <Border
+                        x:Name="ScreenshotThumbnailHost"
+                        Grid.Column="0"
+                        Width="{StaticResource ScreenshotHoverThumbnailMaxWidth}"
+                        Height="{StaticResource ScreenshotHoverThumbnailHeight}"
+                        CornerRadius="{StaticResource Radius8}"
+                        Background="{StaticResource NotchElevatedBrush}"
+                        VerticalAlignment="Center"
+                        IsHitTestVisible="False">
+                        <Grid>
+                            <Path
+                                x:Name="ScreenshotThumbnailFallbackIcon"
+                                Width="{StaticResource ScreenshotActionIconSize}"
+                                Height="{StaticResource ScreenshotActionIconSize}"
+                                Stretch="Uniform"
+                                Fill="{StaticResource NotchSecondaryBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                            <Border
+                                x:Name="ScreenshotThumbnailImageClip"
+                                CornerRadius="{StaticResource Radius8}"
+                                Visibility="Collapsed">
+                                <Image
+                                    x:Name="ScreenshotThumbnailImage"
+                                    Stretch="Uniform"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Screenshot Label + Resolution Metadata -->
+                    <StackPanel
+                        Grid.Column="1"
+                        Orientation="Vertical"
+                        VerticalAlignment="Center"
+                        Spacing="{StaticResource MediaMetadataStackSpacing}"
+                        IsHitTestVisible="False">
+                        <TextBlock
+                            x:Name="ScreenshotTitleText"
+                            Text="Screenshot"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeSecondary}"
+                            FontWeight="Medium"
+                            Foreground="{StaticResource NotchPrimaryBrush}"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap"
+                            MaxLines="1"
+                            TextLineBounds="Tight" />
+                        <TextBlock
+                            x:Name="ScreenshotDimensionsText"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeCaption}"
+                            FontWeight="Normal"
+                            Foreground="{StaticResource NotchSecondaryBrush}"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap"
+                            MaxLines="1"
+                            TextLineBounds="Tight"
+                            Typography.NumeralAlignment="Tabular" />
+                    </StackPanel>
+
+                    <!-- Screenshot Actions: Recent History Affordance + Recapture Button -->
+                    <StackPanel
+                        Grid.Column="2"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Spacing="{StaticResource Spacing6}">
+
+                        <!-- Subtle Recent Screenshots History Action Button -->
+                        <Button
+                            x:Name="ScreenshotHistoryButton"
+                            Style="{StaticResource NotchMediaTransportButtonStyle}"
+                            AutomationProperties.Name="Recent screenshots"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed"
+                            Click="OnScreenshotHistoryButtonClick"
+                            PointerEntered="OnTransportButtonPointerEntered"
+                            PointerExited="OnTransportButtonPointerExited"
+                            PointerCanceled="OnTransportButtonPointerCanceled"
+                            PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                            <Grid
+                                Width="{StaticResource MediaControlButtonSize}"
+                                Height="{StaticResource MediaControlButtonSize}">
+                                <Border
+                                    x:Name="ScreenshotHistoryButtonBg"
+                                    CornerRadius="{StaticResource Radius8}"
+                                    Background="{StaticResource NotchElevatedBrush}" />
+                                <Path
+                                    x:Name="ScreenshotHistoryButtonIcon"
+                                    Width="{StaticResource ScreenshotActionIconSize}"
+                                    Height="{StaticResource ScreenshotActionIconSize}"
+                                    Stretch="Uniform"
+                                    Fill="{StaticResource NotchSecondaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Data="M 1.2,2.8 L 7.2,2.8 C 7.75,2.8 8.2,3.25 8.2,3.8 L 8.2,8.2 C 8.2,8.75 7.75,9.2 7.2,9.2 L 1.2,9.2 C 0.65,9.2 0.2,8.75 0.2,8.2 L 0.2,3.8 C 0.2,3.25 0.65,2.8 1.2,2.8 Z M 2.6,0.8 L 8.8,0.8 C 9.35,0.8 9.8,1.25 9.8,1.8 L 9.8,6.6 L 8.8,6.6 L 8.8,1.8 L 2.6,1.8 Z" />
+                            </Grid>
+                        </Button>
+
+                        <!-- Subtle Recapture Screenshot Action Button -->
+                        <Button
+                            x:Name="ScreenshotRecaptureButton"
+                            Style="{StaticResource NotchMediaTransportButtonStyle}"
+                            AutomationProperties.Name="Capture screenshot"
+                            VerticalAlignment="Center"
+                            Click="OnScreenshotCaptureButtonClick"
+                            PointerEntered="OnTransportButtonPointerEntered"
+                            PointerExited="OnTransportButtonPointerExited"
+                            PointerCanceled="OnTransportButtonPointerCanceled"
+                            PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                            <Grid
+                                Width="{StaticResource MediaControlButtonSize}"
+                                Height="{StaticResource MediaControlButtonSize}">
+                                <Border
+                                    x:Name="ScreenshotRecaptureButtonBg"
+                                    CornerRadius="{StaticResource Radius8}"
+                                    Background="{StaticResource NotchElevatedBrush}" />
+                                <Path
+                                    x:Name="ScreenshotRecaptureButtonIcon"
+                                    Width="{StaticResource ScreenshotActionIconSize}"
+                                    Height="{StaticResource ScreenshotActionIconSize}"
+                                    Stretch="Uniform"
+                                    Fill="{StaticResource NotchPrimaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                            </Grid>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 4d-ii. Recent Screenshot History View (380x120: Header + Up to 3 Aspect-Preserving Thumbnails with Capture Time) -->
+                <Grid
+                    x:Name="ScreenshotHistoryViewHost"
+                    Width="{StaticResource NotchScreenshotHistoryWidth}"
+                    Height="{StaticResource NotchScreenshotHistoryHeight}"
+                    Padding="{StaticResource ScreenshotHistoryPadding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    RowSpacing="{StaticResource Spacing8}"
+                    IsHitTestVisible="False">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <TextBlock
+                        x:Name="ScreenshotHistoryHeaderText"
+                        Grid.Row="0"
+                        Text="Recent screenshots"
+                        FontFamily="{StaticResource NotchFontFamily}"
+                        FontSize="{StaticResource FontSizeSecondary}"
+                        FontWeight="Medium"
+                        Foreground="{StaticResource NotchSecondaryBrush}"
+                        HorizontalAlignment="Left"
+                        VerticalAlignment="Center"
+                        MaxLines="1"
+                        TextLineBounds="Tight"
+                        IsHitTestVisible="False" />
+
+                    <!-- Up to 3 Recent Screenshot Cards (Newest Left-to-Right) -->
+                    <StackPanel
+                        x:Name="ScreenshotHistoryItemsPanel"
+                        Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="{StaticResource ScreenshotHistoryGap}">
+
+                        <!-- Slot 0 (Newest) -->
+                        <Button
+                            x:Name="ScreenshotHistoryItem0Button"
+                            Tag="0"
+                            Style="{StaticResource NotchHistoryThumbnailButtonStyle}"
+                            AutomationProperties.Name="Screenshot captured at --:--"
+                            Visibility="Collapsed"
+                            Click="OnScreenshotHistoryItemClick"
+                            PointerEntered="OnScreenshotHistoryItemPointerEntered"
+                            PointerExited="OnScreenshotHistoryItemPointerExited"
+                            PointerPressed="OnScreenshotHistoryItemPointerPressed"
+                            PointerReleased="OnScreenshotHistoryItemPointerReleased"
+                            PointerCanceled="OnScreenshotHistoryItemPointerCanceled"
+                            PointerCaptureLost="OnScreenshotHistoryItemPointerCaptureLost">
+                            <StackPanel
+                                Orientation="Vertical"
+                                HorizontalAlignment="Center"
+                                Spacing="{StaticResource ScreenshotHistoryMetadataSpacing}">
+                                <Border
+                                    x:Name="ScreenshotHistoryItem0CardBorder"
+                                    Width="{StaticResource ScreenshotHistoryThumbnailWidth}"
+                                    Height="{StaticResource ScreenshotHistoryThumbnailHeight}"
+                                    CornerRadius="{StaticResource RadiusScreenshotHistoryThumbnail}"
+                                    Background="{StaticResource NotchElevatedBrush}"
+                                    BorderBrush="{StaticResource ScreenshotHistoryThumbnailBorderBrush}"
+                                    BorderThickness="1">
+                                    <Grid>
+                                        <Path
+                                            x:Name="ScreenshotHistoryItem0FallbackIcon"
+                                            Width="{StaticResource ScreenshotActionIconSize}"
+                                            Height="{StaticResource ScreenshotActionIconSize}"
+                                            Stretch="Uniform"
+                                            Fill="{StaticResource NotchSecondaryBrush}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                                        <Border
+                                            x:Name="ScreenshotHistoryItem0ImageClip"
+                                            CornerRadius="{StaticResource RadiusScreenshotHistoryThumbnail}"
+                                            Visibility="Collapsed">
+                                            <Image
+                                                x:Name="ScreenshotHistoryItem0Image"
+                                                Stretch="Uniform"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <TextBlock
+                                    x:Name="ScreenshotHistoryItem0TimeText"
+                                    FontFamily="{StaticResource NotchFontFamily}"
+                                    FontSize="{StaticResource FontSizeCaption}"
+                                    FontWeight="Normal"
+                                    Foreground="{StaticResource NotchSecondaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    MaxLines="1"
+                                    TextLineBounds="Tight"
+                                    Typography.NumeralAlignment="Tabular" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Slot 1 -->
+                        <Button
+                            x:Name="ScreenshotHistoryItem1Button"
+                            Tag="1"
+                            Style="{StaticResource NotchHistoryThumbnailButtonStyle}"
+                            AutomationProperties.Name="Screenshot captured at --:--"
+                            Visibility="Collapsed"
+                            Click="OnScreenshotHistoryItemClick"
+                            PointerEntered="OnScreenshotHistoryItemPointerEntered"
+                            PointerExited="OnScreenshotHistoryItemPointerExited"
+                            PointerPressed="OnScreenshotHistoryItemPointerPressed"
+                            PointerReleased="OnScreenshotHistoryItemPointerReleased"
+                            PointerCanceled="OnScreenshotHistoryItemPointerCanceled"
+                            PointerCaptureLost="OnScreenshotHistoryItemPointerCaptureLost">
+                            <StackPanel
+                                Orientation="Vertical"
+                                HorizontalAlignment="Center"
+                                Spacing="{StaticResource ScreenshotHistoryMetadataSpacing}">
+                                <Border
+                                    x:Name="ScreenshotHistoryItem1CardBorder"
+                                    Width="{StaticResource ScreenshotHistoryThumbnailWidth}"
+                                    Height="{StaticResource ScreenshotHistoryThumbnailHeight}"
+                                    CornerRadius="{StaticResource RadiusScreenshotHistoryThumbnail}"
+                                    Background="{StaticResource NotchElevatedBrush}"
+                                    BorderBrush="{StaticResource ScreenshotHistoryThumbnailBorderBrush}"
+                                    BorderThickness="1">
+                                    <Grid>
+                                        <Path
+                                            x:Name="ScreenshotHistoryItem1FallbackIcon"
+                                            Width="{StaticResource ScreenshotActionIconSize}"
+                                            Height="{StaticResource ScreenshotActionIconSize}"
+                                            Stretch="Uniform"
+                                            Fill="{StaticResource NotchSecondaryBrush}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                                        <Border
+                                            x:Name="ScreenshotHistoryItem1ImageClip"
+                                            CornerRadius="{StaticResource RadiusScreenshotHistoryThumbnail}"
+                                            Visibility="Collapsed">
+                                            <Image
+                                                x:Name="ScreenshotHistoryItem1Image"
+                                                Stretch="Uniform"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <TextBlock
+                                    x:Name="ScreenshotHistoryItem1TimeText"
+                                    FontFamily="{StaticResource NotchFontFamily}"
+                                    FontSize="{StaticResource FontSizeCaption}"
+                                    FontWeight="Normal"
+                                    Foreground="{StaticResource NotchSecondaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    MaxLines="1"
+                                    TextLineBounds="Tight"
+                                    Typography.NumeralAlignment="Tabular" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Slot 2 -->
+                        <Button
+                            x:Name="ScreenshotHistoryItem2Button"
+                            Tag="2"
+                            Style="{StaticResource NotchHistoryThumbnailButtonStyle}"
+                            AutomationProperties.Name="Screenshot captured at --:--"
+                            Visibility="Collapsed"
+                            Click="OnScreenshotHistoryItemClick"
+                            PointerEntered="OnScreenshotHistoryItemPointerEntered"
+                            PointerExited="OnScreenshotHistoryItemPointerExited"
+                            PointerPressed="OnScreenshotHistoryItemPointerPressed"
+                            PointerReleased="OnScreenshotHistoryItemPointerReleased"
+                            PointerCanceled="OnScreenshotHistoryItemPointerCanceled"
+                            PointerCaptureLost="OnScreenshotHistoryItemPointerCaptureLost">
+                            <StackPanel
+                                Orientation="Vertical"
+                                HorizontalAlignment="Center"
+                                Spacing="{StaticResource ScreenshotHistoryMetadataSpacing}">
+                                <Border
+                                    x:Name="ScreenshotHistoryItem2CardBorder"
+                                    Width="{StaticResource ScreenshotHistoryThumbnailWidth}"
+                                    Height="{StaticResource ScreenshotHistoryThumbnailHeight}"
+                                    CornerRadius="{StaticResource RadiusScreenshotHistoryThumbnail}"
+                                    Background="{StaticResource NotchElevatedBrush}"
+                                    BorderBrush="{StaticResource ScreenshotHistoryThumbnailBorderBrush}"
+                                    BorderThickness="1">
+                                    <Grid>
+                                        <Path
+                                            x:Name="ScreenshotHistoryItem2FallbackIcon"
+                                            Width="{StaticResource ScreenshotActionIconSize}"
+                                            Height="{StaticResource ScreenshotActionIconSize}"
+                                            Stretch="Uniform"
+                                            Fill="{StaticResource NotchSecondaryBrush}"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                                        <Border
+                                            x:Name="ScreenshotHistoryItem2ImageClip"
+                                            CornerRadius="{StaticResource RadiusScreenshotHistoryThumbnail}"
+                                            Visibility="Collapsed">
+                                            <Image
+                                                x:Name="ScreenshotHistoryItem2Image"
+                                                Stretch="Uniform"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center" />
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <TextBlock
+                                    x:Name="ScreenshotHistoryItem2TimeText"
+                                    FontFamily="{StaticResource NotchFontFamily}"
+                                    FontSize="{StaticResource FontSizeCaption}"
+                                    FontWeight="Normal"
+                                    Foreground="{StaticResource NotchSecondaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    MaxLines="1"
+                                    TextLineBounds="Tight"
+                                    Typography.NumeralAlignment="Tabular" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 4e. Drag & Drop Target / File Preview (300x64: Active Drag Prompt or Dropped File Metadata) -->
+                <Grid
+                    x:Name="DropTargetViewHost"
+                    Width="{StaticResource NotchDropTargetWidth}"
+                    Height="{StaticResource NotchDropTargetHeight}"
+                    Padding="{StaticResource DropTargetPadding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    IsHitTestVisible="False">
+
+                    <!-- Mode 1: Active Drag Prompt ([↓] Drop file here) -->
+                    <StackPanel
+                        x:Name="DropTargetPromptPanel"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="{StaticResource Spacing12}"
+                        IsHitTestVisible="False">
+                        <Border
+                            Width="{StaticResource DropTargetBadgeSize}"
+                            Height="{StaticResource DropTargetBadgeSize}"
+                            CornerRadius="{StaticResource Radius8}"
+                            Background="{StaticResource NotchElevatedBrush}"
+                            VerticalAlignment="Center">
+                            <Path
+                                Width="{StaticResource DropTargetIconSize}"
+                                Height="{StaticResource DropTargetIconSize}"
+                                Stretch="Uniform"
+                                Fill="{StaticResource NotchAccentBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="M 4.3,1 L 5.7,1 L 5.7,5.6 L 7.6,3.7 L 8.6,4.7 L 5,8.3 L 1.4,4.7 L 2.4,3.7 L 4.3,5.6 Z M 1.5,8.8 L 8.5,8.8 L 8.5,10 L 1.5,10 Z" />
+                        </Border>
+                        <TextBlock
+                            x:Name="DropTargetPromptText"
+                            Text="Drop file here"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeBody}"
+                            FontWeight="Medium"
+                            Foreground="{StaticResource NotchPrimaryBrush}"
+                            VerticalAlignment="Center"
+                            TextLineBounds="Tight" />
+                    </StackPanel>
+
+                    <!-- Mode 2: Dropped File Preview ([Category Icon Badge] + [Filename + Formatted Size]) -->
+                    <Grid
+                        x:Name="DropPreviewContentPanel"
+                        VerticalAlignment="Center"
+                        ColumnSpacing="{StaticResource Spacing12}"
+                        IsHitTestVisible="False">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 32x32 Rounded File Category Icon Badge -->
+                        <Border
+                            Grid.Column="0"
+                            Width="{StaticResource DropTargetBadgeSize}"
+                            Height="{StaticResource DropTargetBadgeSize}"
+                            CornerRadius="{StaticResource Radius8}"
+                            Background="{StaticResource NotchElevatedBrush}"
+                            VerticalAlignment="Center">
+                            <Grid>
+                                <!-- Generic File Icon -->
+                                <Path
+                                    x:Name="DropCategoryGenericIcon"
+                                    Width="{StaticResource DropTargetIconSize}"
+                                    Height="{StaticResource DropTargetIconSize}"
+                                    Stretch="Uniform"
+                                    Fill="{StaticResource NotchSecondaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Data="M 2,1 L 6,1 L 8.5,3.5 L 8.5,9 L 2,9 Z M 5.5,1.8 L 5.5,4 L 7.7,4 Z" />
+
+                                <!-- Image Category Icon (.png, .jpg, .jpeg, .webp, .gif, .bmp) -->
+                                <Path
+                                    x:Name="DropCategoryImageIcon"
+                                    Width="{StaticResource DropTargetIconSize}"
+                                    Height="{StaticResource DropTargetIconSize}"
+                                    Stretch="Uniform"
+                                    Fill="{StaticResource NotchAccentBrush}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed"
+                                    Data="M 1.2,2 L 8.8,2 L 8.8,8 L 1.2,8 Z M 2.2,6.8 L 4,4.6 L 5.4,6.1 L 6.6,4.9 L 7.8,6.8 Z" />
+
+                                <!-- Document Category Icon (.pdf, .txt, .md, .doc, .docx) -->
+                                <Path
+                                    x:Name="DropCategoryDocumentIcon"
+                                    Width="{StaticResource DropTargetIconSize}"
+                                    Height="{StaticResource DropTargetIconSize}"
+                                    Stretch="Uniform"
+                                    Fill="{StaticResource NotchPrimaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed"
+                                    Data="M 2,1 L 6,1 L 8.5,3.5 L 8.5,9 L 2,9 Z M 3.2,5 L 7.2,5 L 7.2,5.9 L 3.2,5.9 Z M 3.2,6.8 L 6.2,6.8 L 6.2,7.7 L 3.2,7.7 Z" />
+
+                                <!-- Archive Category Icon (.zip, .7z, .rar, .tar, .gz) -->
+                                <Path
+                                    x:Name="DropCategoryArchiveIcon"
+                                    Width="{StaticResource DropTargetIconSize}"
+                                    Height="{StaticResource DropTargetIconSize}"
+                                    Stretch="Uniform"
+                                    Fill="{StaticResource NotchSecondaryBrush}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed"
+                                    Data="M 1.2,1.5 L 8.8,1.5 L 8.8,3.6 L 1.2,3.6 Z M 1.8,4.2 L 8.2,4.2 L 8.2,8.8 L 1.8,8.8 Z M 3.8,5.4 L 6.2,5.4 L 6.2,6.4 L 3.8,6.4 Z" />
+
+                                <!-- Code Category Icon (.cs, .json, .xml, .yaml, .yml, .js, .ts, .py) -->
+                                <Path
+                                    x:Name="DropCategoryCodeIcon"
+                                    Width="{StaticResource DropTargetIconSize}"
+                                    Height="{StaticResource DropTargetIconSize}"
+                                    Stretch="Uniform"
+                                    Fill="{StaticResource NotchAccentBrush}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed"
+                                    Data="M 3.6,2.2 L 1,5 L 3.6,7.8 L 4.4,7 L 2.5,5 L 4.4,3 Z M 6.4,2.2 L 5.6,3 L 7.5,5 L 5.6,7 L 6.4,7.8 L 9,5 Z" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Filename + Formatted File Size -->
+                        <StackPanel
+                            Grid.Column="1"
+                            Orientation="Vertical"
+                            VerticalAlignment="Center"
+                            Spacing="{StaticResource MediaMetadataStackSpacing}"
+                            IsHitTestVisible="False">
+                            <TextBlock
+                                x:Name="DropFileNameText"
+                                FontFamily="{StaticResource NotchFontFamily}"
+                                FontSize="{StaticResource FontSizeSecondary}"
+                                FontWeight="Medium"
+                                Foreground="{StaticResource NotchPrimaryBrush}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="NoWrap"
+                                MaxLines="1"
+                                TextLineBounds="Tight" />
+                            <TextBlock
+                                x:Name="DropFileSizeText"
+                                FontFamily="{StaticResource NotchFontFamily}"
+                                FontSize="{StaticResource FontSizeCaption}"
+                                FontWeight="Normal"
+                                Foreground="{StaticResource NotchSecondaryBrush}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="NoWrap"
+                                MaxLines="1"
+                                TextLineBounds="Tight"
+                                Typography.NumeralAlignment="Tabular" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+
+                <!-- 4f. Calendar Upcoming Event Hover Preview (220x44: [24x24 Calendar Icon Badge] + [Event Title + Time · Duration]) -->
+                <Grid
+                    x:Name="CalendarHoverViewHost"
+                    Width="{StaticResource NotchHoverWidth}"
+                    Height="{StaticResource NotchHoverHeight}"
+                    Padding="{StaticResource CalendarHoverPadding}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    ColumnSpacing="{StaticResource Spacing8}"
+                    IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 24x24 Rounded Calendar Badge -->
+                    <Border
+                        x:Name="CalendarBadgeHost"
+                        Grid.Column="0"
+                        Width="{StaticResource CalendarHoverIconSize}"
+                        Height="{StaticResource CalendarHoverIconSize}"
+                        CornerRadius="{StaticResource Radius8}"
+                        Background="{StaticResource NotchElevatedBrush}"
+                        VerticalAlignment="Center"
+                        IsHitTestVisible="False">
+                        <Path
+                            x:Name="CalendarBadgeGlyph"
+                            Width="{StaticResource CalendarHoverGlyphSize}"
+                            Height="{StaticResource CalendarHoverGlyphSize}"
+                            Stretch="Uniform"
+                            Fill="{StaticResource NotchAccentBrush}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Data="M 2.5,0.8 L 3.7,0.8 L 3.7,2 L 6.3,2 L 6.3,0.8 L 7.5,0.8 L 7.5,2 L 8.8,2 L 8.8,9 L 1.2,9 L 1.2,2 L 2.5,2 Z M 2.2,4.2 L 2.2,8 L 7.8,8 L 7.8,4.2 Z" />
+                    </Border>
+
+                    <!-- Event Title + Start Time · Duration -->
+                    <StackPanel
+                        Grid.Column="1"
+                        Orientation="Vertical"
+                        VerticalAlignment="Center"
+                        Spacing="{StaticResource MediaMetadataStackSpacing}"
+                        IsHitTestVisible="False">
+                        <TextBlock
+                            x:Name="CalendarEventTitleText"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeSecondary}"
+                            FontWeight="Medium"
+                            Foreground="{StaticResource NotchPrimaryBrush}"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap"
+                            MaxLines="1"
+                            TextLineBounds="Tight" />
+                        <TextBlock
+                            x:Name="CalendarEventSubtitleText"
+                            FontFamily="{StaticResource NotchFontFamily}"
+                            FontSize="{StaticResource FontSizeCaption}"
+                            FontWeight="Normal"
+                            Foreground="{StaticResource NotchSecondaryBrush}"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap"
+                            MaxLines="1"
+                            TextLineBounds="Tight"
+                            Typography.NumeralAlignment="Tabular" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,33 @@
+name: Build Windows Notch (Self-Contained)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore WindowsNotch.csproj -r win-x64
+
+      - name: Publish self-contained Windows x64 executable
+        run: dotnet publish WindowsNotch.csproj -c Release -r win-x64 -p:Platform=x64 --self-contained true -o ./publish/WindowsNotch-win-x64
+
+      - name: Upload WindowsNotch artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WindowsNotch-win-x64
+          path: ./publish/WindowsNotch-win-x64
+          if-no-files-found: error
