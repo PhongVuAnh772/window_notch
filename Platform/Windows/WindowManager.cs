@@ -109,6 +109,7 @@ public sealed class WindowManager : IDisposable
     private int _appliedPhysicalWidth = -1;
     private int _appliedPhysicalHeight = -1;
     private MonitorPlacementTarget _monitorTarget = MonitorPlacementTarget.Primary;
+    private nint _blackGdiBrush = nint.Zero;
 
     public WindowManager(Window window)
     {
@@ -353,7 +354,7 @@ public sealed class WindowManager : IDisposable
     private void ConfigurePerPixelTransparency()
     {
         // Suppress WinUI 3's default opaque theme background fill on the root visual.
-        _window.SystemBackdrop = new TransparentWindowBackdrop();
+        _window.SystemBackdrop = new TransparentWindowBackdrop(_window.Compositor);
 
         // Suppress Windows 11 DWM outer rectangular border and system corner rounding on the host HWND.
         if (WindowsPlatformInfo.IsWindows11OrGreater())
@@ -402,6 +403,20 @@ public sealed class WindowManager : IDisposable
             {
                 DeleteObject(emptyRegion);
             }
+        }
+
+        nint hdc = GetDC(_hwnd);
+        if (hdc != nint.Zero)
+        {
+            if (GetClientRect(_hwnd, out RECT rect))
+            {
+                if (_blackGdiBrush == nint.Zero)
+                {
+                    _blackGdiBrush = CreateSolidBrush(0);
+                }
+                FillRect(hdc, ref rect, _blackGdiBrush);
+            }
+            ReleaseDC(_hwnd, hdc);
         }
     }
 
@@ -503,7 +518,14 @@ public sealed class WindowManager : IDisposable
                 break;
 
             case WM_ERASEBKGND:
-                // Prevent Win32 GDI from painting an opaque background rect behind the DirectComposition surface.
+                if (GetClientRect(_hwnd, out RECT eraseRect))
+                {
+                    if (_blackGdiBrush == nint.Zero)
+                    {
+                        _blackGdiBrush = CreateSolidBrush(0);
+                    }
+                    FillRect((nint)wParam, ref eraseRect, _blackGdiBrush);
+                }
                 return 1;
 
             case WM_DPICHANGED:
@@ -572,23 +594,41 @@ public sealed class WindowManager : IDisposable
             _isSubclassed = false;
         }
 
+        if (_blackGdiBrush != nint.Zero)
+        {
+            DeleteObject(_blackGdiBrush);
+            _blackGdiBrush = nint.Zero;
+        }
+
         _isDisposed = true;
     }
 
     /// <summary>
-    /// Clears WinUI 3's default opaque theme background brush so areas outside the Notch pill are transparent.
+    /// Sets a transparent CompositionColorBrush on the WinUI 3 window backdrop
+    /// so the host window surface renders 100% per-pixel transparent.
     /// </summary>
     private sealed class TransparentWindowBackdrop : SystemBackdrop
     {
+        private readonly Compositor _compositor;
+        private CompositionColorBrush? _transparentBrush;
+
+        public TransparentWindowBackdrop(Compositor compositor)
+        {
+            _compositor = compositor;
+        }
+
         protected override void OnTargetConnected(ICompositionSupportsSystemBackdrop connectedTarget, XamlRoot xamlRoot)
         {
+            _transparentBrush = _compositor.CreateColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
+            connectedTarget.SystemBackdrop = _transparentBrush;
             base.OnTargetConnected(connectedTarget, xamlRoot);
-            connectedTarget.SystemBackdrop = null;
         }
 
         protected override void OnTargetDisconnected(ICompositionSupportsSystemBackdrop disconnectedTarget)
         {
             disconnectedTarget.SystemBackdrop = null;
+            _transparentBrush?.Dispose();
+            _transparentBrush = null;
             base.OnTargetDisconnected(disconnectedTarget);
         }
     }
@@ -740,6 +780,22 @@ public sealed class WindowManager : IDisposable
     [DllImport("gdi32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DeleteObject(nint hObject);
+
+    [DllImport("gdi32.dll")]
+    private static extern nint CreateSolidBrush(uint crColor);
+
+    [DllImport("user32.dll")]
+    private static extern int FillRect(nint hDC, ref RECT lprc, nint hbr);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(nint hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetDC(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(nint hWnd, nint hDC);
 
     [DllImport("comctl32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

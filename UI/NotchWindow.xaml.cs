@@ -2067,13 +2067,8 @@ public sealed partial class NotchWindow : Window
                 ReleaseDecodedScreenshotHistoryBitmaps();
             }
 
-            double hostWidth = target.HostCanvasWidth;
-            double hostHeight = target.HostCanvasHeight;
-
             ApplyMediaLayoutForState(NotchState.Expanded);
-            ApplyHostCanvasBounds(hostWidth, hostHeight);
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-            _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
 
             UpdateMediaInteractivity(NotchState.Expanded, hasMedia);
             SyncTimelineToView(_controller.CurrentMediaState);
@@ -2082,8 +2077,8 @@ public sealed partial class NotchWindow : Window
                 e.PreviousState,
                 NotchState.Expanded,
                 target,
-                hostWidth,
-                hostHeight,
+                DesignTokens.Canvas.HostWidth,
+                DesignTokens.Canvas.HostHeight,
                 hasMedia,
                 hasClipboard,
                 hasScreenshot,
@@ -2094,13 +2089,8 @@ public sealed partial class NotchWindow : Window
         }
         else if (e.CurrentState == NotchState.ScreenshotHistory)
         {
-            double hostWidth = target.HostCanvasWidth;
-            double hostHeight = target.HostCanvasHeight;
-
             ApplyMediaLayoutForState(NotchState.Hover);
-            ApplyHostCanvasBounds(hostWidth, hostHeight);
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-            _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
 
             UpdateMediaInteractivity(NotchState.ScreenshotHistory, hasMedia);
             _animator.StopSeekTimelineInterpolation();
@@ -2110,8 +2100,8 @@ public sealed partial class NotchWindow : Window
                 e.PreviousState,
                 NotchState.ScreenshotHistory,
                 target,
-                hostWidth,
-                hostHeight,
+                DesignTokens.Canvas.HostWidth,
+                DesignTokens.Canvas.HostHeight,
                 hasMedia,
                 hasClipboard,
                 hasScreenshot,
@@ -2127,13 +2117,8 @@ public sealed partial class NotchWindow : Window
                 ReleaseDecodedScreenshotHistoryBitmaps();
             }
 
-            double hostWidth = target.HostCanvasWidth;
-            double hostHeight = target.HostCanvasHeight;
-
             ApplyMediaLayoutForState(NotchState.Hover);
-            ApplyHostCanvasBounds(hostWidth, hostHeight);
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-            _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
 
             UpdateMediaInteractivity(NotchState.DropTarget, hasMedia);
             _animator.StopSeekTimelineInterpolation();
@@ -2142,8 +2127,8 @@ public sealed partial class NotchWindow : Window
                 e.PreviousState,
                 NotchState.DropTarget,
                 target,
-                hostWidth,
-                hostHeight,
+                DesignTokens.Canvas.HostWidth,
+                DesignTokens.Canvas.HostHeight,
                 hasMedia,
                 hasClipboard,
                 hasScreenshot,
@@ -2158,32 +2143,36 @@ public sealed partial class NotchWindow : Window
             UpdateMediaInteractivity(NotchState.Hover, hasMedia);
             _animator.StopSeekTimelineInterpolation();
 
-            if (e.PreviousState is NotchState.Expanded or NotchState.DropTarget or NotchState.ScreenshotHistory)
-            {
-                // Shrinking from Expanded (380x88), ScreenshotHistory (380x120), or DropTarget (300x64) to Hover (220x44):
-                // keep outer canvas large until animation finishes, then release decoded history bitmaps and shrink bounds.
-                double currentHostWidth = NotchSurface.Width;
-                double currentHostHeight = NotchSurface.Height;
-                bool leavingScreenshotHistory = e.PreviousState == NotchState.ScreenshotHistory;
+            bool leavingScreenshotHistory = e.PreviousState == NotchState.ScreenshotHistory;
+            _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
 
-                _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-
-                _animator.TransitionToState(
-                    e.PreviousState,
-                    NotchState.Hover,
-                    target,
-                    currentHostWidth,
-                    currentHostHeight,
-                    hasMedia,
-                    hasClipboard,
-                    hasScreenshot,
-                    shouldShowScreenshotInHover,
-                    hasActiveDrag,
-                    hasActiveDropPreview,
-                    hasCalendarEvent,
-                    onCompleted: () =>
+            _animator.TransitionToState(
+                e.PreviousState,
+                NotchState.Hover,
+                target,
+                DesignTokens.Canvas.HostWidth,
+                DesignTokens.Canvas.HostHeight,
+                hasMedia,
+                hasClipboard,
+                hasScreenshot,
+                shouldShowScreenshotInHover,
+                hasActiveDrag,
+                hasActiveDropPreview,
+                hasCalendarEvent,
+                onCompleted: () =>
+                {
+                    if (DispatcherQueue.HasThreadAccess)
                     {
-                        if (DispatcherQueue.HasThreadAccess)
+                        if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
+                        {
+                            ReleaseDecodedScreenshotHistoryBitmaps();
+                        }
+
+                        FinalizeHostBoundsForState(NotchState.Hover, target);
+                    }
+                    else
+                    {
+                        DispatcherQueue.TryEnqueue(() =>
                         {
                             if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
                             {
@@ -2191,44 +2180,9 @@ public sealed partial class NotchWindow : Window
                             }
 
                             FinalizeHostBoundsForState(NotchState.Hover, target);
-                        }
-                        else
-                        {
-                            DispatcherQueue.TryEnqueue(() =>
-                            {
-                                if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
-                                {
-                                    ReleaseDecodedScreenshotHistoryBitmaps();
-                                }
-
-                                FinalizeHostBoundsForState(NotchState.Hover, target);
-                            });
-                        }
-                    });
-            }
-            else
-            {
-                double hostWidth = target.HostCanvasWidth;
-                double hostHeight = target.HostCanvasHeight;
-
-                ApplyHostCanvasBounds(hostWidth, hostHeight);
-                _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-                _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
-
-                _animator.TransitionToState(
-                    e.PreviousState,
-                    NotchState.Hover,
-                    target,
-                    hostWidth,
-                    hostHeight,
-                    hasMedia,
-                    hasClipboard,
-                    hasScreenshot,
-                    shouldShowScreenshotInHover,
-                    hasActiveDrag,
-                    hasActiveDropPreview,
-                    hasCalendarEvent);
-            }
+                        });
+                    }
+                });
         }
         else if (NotchController.IsCollapsedState(e.CurrentState))
         {
@@ -2242,18 +2196,15 @@ public sealed partial class NotchWindow : Window
                 return;
             }
 
-            double currentHostWidth = NotchSurface.Width;
-            double currentHostHeight = NotchSurface.Height;
             bool leavingScreenshotHistory = e.PreviousState == NotchState.ScreenshotHistory;
-
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
 
             _animator.TransitionToState(
                 e.PreviousState,
                 e.CurrentState,
                 target,
-                currentHostWidth,
-                currentHostHeight,
+                DesignTokens.Canvas.HostWidth,
+                DesignTokens.Canvas.HostHeight,
                 hasMedia,
                 hasClipboard,
                 hasScreenshot,
@@ -2295,12 +2246,7 @@ public sealed partial class NotchWindow : Window
             return;
         }
 
-        double hostWidth = dimensions.HostCanvasWidth;
-        double hostHeight = dimensions.HostCanvasHeight;
-
-        ApplyHostCanvasBounds(hostWidth, hostHeight);
-        _animator.UpdateHostCanvasSize(hostWidth, hostHeight);
-        _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
+        _windowManager.SetInteractivePillBounds(dimensions.LogicalWidth, dimensions.LogicalHeight);
     }
 
     private void FinalizeCollapsedHostBounds(NotchDimensions collapsedDimensions)
@@ -2310,12 +2256,7 @@ public sealed partial class NotchWindow : Window
             return;
         }
 
-        double hostWidth = collapsedDimensions.HostCanvasWidth;
-        double hostHeight = collapsedDimensions.HostCanvasHeight;
-
-        ApplyHostCanvasBounds(hostWidth, hostHeight);
-        _animator.UpdateHostCanvasSize(hostWidth, hostHeight);
-        _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
+        _windowManager.SetInteractivePillBounds(collapsedDimensions.LogicalWidth, collapsedDimensions.LogicalHeight);
     }
 
     private void ApplyHostCanvasBounds(double hostWidth, double hostHeight)

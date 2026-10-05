@@ -1612,30 +1612,14 @@ public sealed class NotchAnimator : IDisposable
 
     private (SpriteVisual? Visual, CompositionBrush? Brush, bool IsSupported) TryCreateGlassBackdrop()
     {
-        try
-        {
-            CompositionBrush? backdropBrush = _compositor.CreateBackdropBrush();
-            if (backdropBrush is null)
-            {
-                return (null, null, false);
-            }
-
-            SpriteVisual backdropVisual = _compositor.CreateSpriteVisual();
-            backdropVisual.Brush = backdropBrush;
-            ElementCompositionPreview.SetElementChildVisual(_layers.BackdropLayer, backdropVisual);
-            return (backdropVisual, backdropBrush, true);
-        }
-        catch
-        {
-            // Graceful fallback: solid dark surface + subtle border + soft shadow remain active.
-            return (null, null, false);
-        }
+        // Solid deep OLED black surface with subtle inner depth sheen and soft drop shadow
+        // provides the crispest, most premium Dynamic Island look on Windows.
+        return (null, null, false);
     }
 
     private float ResolveEffectiveSurfaceOpacity(float requestedOpacity)
     {
-        // When backdrop blur is unavailable, fall back to a fully solid dark surface (opacity 1.0).
-        return _hasGlassBackdrop ? requestedOpacity : 1.0f;
+        return 1.0f;
     }
 
     private CompositionLinearGradientBrush CreateBorderHighlightBrush()

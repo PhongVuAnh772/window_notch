@@ -27,9 +27,9 @@ public readonly record struct NotchDimensions(
     float ShadowOpacity,
     float ShadowOffsetY)
 {
-    public double HostCanvasWidth => LogicalWidth + DesignTokens.Surface.ShadowAllowanceHorizontal;
+    public double HostCanvasWidth => DesignTokens.Canvas.HostWidth;
 
-    public double HostCanvasHeight => LogicalHeight + DesignTokens.Surface.ShadowAllowanceBottom;
+    public double HostCanvasHeight => DesignTokens.Canvas.HostHeight;
 }
 
 public sealed class NotchStateChangedEventArgs : EventArgs
