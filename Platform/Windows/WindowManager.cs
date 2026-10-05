@@ -354,7 +354,7 @@ public sealed class WindowManager : IDisposable
     private void ConfigurePerPixelTransparency()
     {
         // Suppress WinUI 3's default opaque theme background fill on the root visual.
-        _window.SystemBackdrop = new TransparentWindowBackdrop(_window.Compositor);
+        _window.SystemBackdrop = new TransparentWindowBackdrop();
 
         // Suppress Windows 11 DWM outer rectangular border and system corner rounding on the host HWND.
         if (WindowsPlatformInfo.IsWindows11OrGreater())
@@ -604,31 +604,19 @@ public sealed class WindowManager : IDisposable
     }
 
     /// <summary>
-    /// Sets a transparent CompositionColorBrush on the WinUI 3 window backdrop
-    /// so the host window surface renders 100% per-pixel transparent.
+    /// Clears WinUI 3's default opaque theme background brush so areas outside the Notch pill are transparent.
     /// </summary>
     private sealed class TransparentWindowBackdrop : SystemBackdrop
     {
-        private readonly Compositor _compositor;
-        private CompositionColorBrush? _transparentBrush;
-
-        public TransparentWindowBackdrop(Compositor compositor)
-        {
-            _compositor = compositor;
-        }
-
         protected override void OnTargetConnected(ICompositionSupportsSystemBackdrop connectedTarget, XamlRoot xamlRoot)
         {
-            _transparentBrush = _compositor.CreateColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
-            connectedTarget.SystemBackdrop = _transparentBrush;
             base.OnTargetConnected(connectedTarget, xamlRoot);
+            connectedTarget.SystemBackdrop = null;
         }
 
         protected override void OnTargetDisconnected(ICompositionSupportsSystemBackdrop disconnectedTarget)
         {
             disconnectedTarget.SystemBackdrop = null;
-            _transparentBrush?.Dispose();
-            _transparentBrush = null;
             base.OnTargetDisconnected(disconnectedTarget);
         }
     }

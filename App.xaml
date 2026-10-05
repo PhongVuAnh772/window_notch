@@ -12,8 +12,6 @@
             </ResourceDictionary.MergedDictionaries>
             <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="Transparent" />
             <SolidColorBrush x:Key="WindowBackground" Color="Transparent" />
-            <SolidColorBrush x:Key="WindowCaptionBackground" Color="Transparent" />
-            <SolidColorBrush x:Key="WindowCaptionBackgroundDisabled" Color="Transparent" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

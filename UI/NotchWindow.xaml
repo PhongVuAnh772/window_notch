@@ -13,8 +13,8 @@
         <!-- 1. Shadow / Depth Layer (Compositor DropShadow behind the pill surface) -->
         <Grid
             x:Name="ShadowLayer"
-            Width="{StaticResource HostCanvasWidth}"
-            Height="{StaticResource HostCanvasHeight}"
+            Width="500"
+            Height="300"
             HorizontalAlignment="Center"
             VerticalAlignment="Top"
             IsHitTestVisible="False" />
@@ -22,8 +22,8 @@
         <!-- 2. Clipped Pill Surface Container -->
         <Grid
             x:Name="NotchSurface"
-            Width="{StaticResource HostCanvasWidth}"
-            Height="{StaticResource HostCanvasHeight}"
+            Width="500"
+            Height="300"
             Background="Transparent"
             HorizontalAlignment="Center"
             VerticalAlignment="Top"
