@@ -21,4 +21,10 @@ public interface IDragDropService : IDisposable
     void Stop();
 
     void Clear();
+
+    void OnExternalDragEnter();
+
+    void OnExternalDragLeave();
+
+    bool TryAcceptDroppedFilePath(string? filePath);
 }

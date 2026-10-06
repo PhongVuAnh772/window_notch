@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using Microsoft.UI;
 using Microsoft.UI.Composition;
+using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using Windows.Graphics;
+using WinRT;
 using WinRT.Interop;
 
 namespace WindowsNotch.Platform.Windows;
@@ -35,7 +39,7 @@ public readonly record struct NativeTrayMessageEventArgs(
 /// <summary>
 /// Manages native WinUI 3 AppWindow and Win32/DWM configuration for the persistent Notch window.
 /// Handles borderless styling, per-pixel outer transparency, always-on-top z-order, taskbar suppression,
-/// and DPI-aware top-center positioning.
+/// NonClient Passthrough hit-testing, and DPI-aware top-center positioning.
 /// </summary>
 public sealed class WindowManager : IDisposable
 {
@@ -94,6 +98,7 @@ public sealed class WindowManager : IDisposable
 
     private readonly Window _window;
     private readonly nint _hwnd;
+    private readonly WindowId _windowId;
     private readonly AppWindow _appWindow;
     private readonly SubclassProc _subclassDelegate;
     private bool _isSubclassed;
@@ -108,7 +113,16 @@ public sealed class WindowManager : IDisposable
     private int _appliedTop = int.MinValue;
     private int _appliedPhysicalWidth = -1;
     private int _appliedPhysicalHeight = -1;
+    private int _interactivePhysicalLeft;
+    private int _interactivePhysicalTop;
+    private int _interactivePhysicalRight;
+    private int _interactivePhysicalBottom;
+    private bool _wasCursorInsideInteractivePill;
+    private MonitorWorkArea _cachedWorkArea;
+    private bool _hasCachedWorkArea;
     private MonitorPlacementTarget _monitorTarget = MonitorPlacementTarget.Primary;
+    private nint _blackGdiBrush = nint.Zero;
+    private global::Windows.UI.Composition.CompositionColorBrush? _fallbackTransparentBrush;
 
     public WindowManager(Window window)
     {
@@ -116,8 +130,8 @@ public sealed class WindowManager : IDisposable
 
         _window = window;
         _hwnd = WindowNative.GetWindowHandle(_window);
-        WindowId windowId = Win32Interop.GetWindowIdFromWindow(_hwnd);
-        _appWindow = AppWindow.GetFromWindowId(windowId);
+        _windowId = Win32Interop.GetWindowIdFromWindow(_hwnd);
+        _appWindow = AppWindow.GetFromWindowId(_windowId);
         _subclassDelegate = WindowSubclassProc;
     }
 
@@ -151,6 +165,24 @@ public sealed class WindowManager : IDisposable
         ConfigureWin32WindowStyles();
         ConfigurePerPixelTransparency();
         InstallWindowSubclass();
+        RefreshMonitorWorkArea(_monitorTarget);
+        UpdatePositionAndSize(_currentLogicalWidth, _currentLogicalHeight, _monitorTarget, forceUpdate: true);
+    }
+
+    /// <summary>
+    /// Re-applies borderless Win32 styles, DWM per-pixel transparency, and NonClient passthrough regions
+    /// after <see cref="Window.Activate"/> so WinUI 3's initial activation cannot restore non-client chrome.
+    /// </summary>
+    public void EnsureStylesOnActivation()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        ConfigureWin32WindowStyles();
+        ConfigurePerPixelTransparency();
+        RefreshMonitorWorkArea(_monitorTarget);
         UpdatePositionAndSize(_currentLogicalWidth, _currentLogicalHeight, _monitorTarget, forceUpdate: true);
     }
 
@@ -170,6 +202,7 @@ public sealed class WindowManager : IDisposable
         }
 
         IsWindowVisible = true;
+        RefreshMonitorWorkArea(target);
         UpdatePositionAndSize(logicalWidth, logicalHeight, target, forceUpdate: true);
     }
 
@@ -181,6 +214,7 @@ public sealed class WindowManager : IDisposable
         }
 
         IsWindowVisible = false;
+        _wasCursorInsideInteractivePill = false;
         _ = SetWindowPos(
             _hwnd,
             nint.Zero,
@@ -194,8 +228,14 @@ public sealed class WindowManager : IDisposable
 
     public void SetInteractivePillBounds(double interactiveLogicalWidth, double interactiveLogicalHeight)
     {
+        if (_isDisposed)
+        {
+            return;
+        }
+
         _interactiveLogicalWidth = interactiveLogicalWidth;
         _interactiveLogicalHeight = interactiveLogicalHeight;
+        UpdateInteractiveBoundsAndPassthroughRegions();
     }
 
     public void UpdatePositionAndSize(
@@ -208,7 +248,12 @@ public sealed class WindowManager : IDisposable
         _currentLogicalHeight = logicalHeight;
         _monitorTarget = target;
 
-        MonitorWorkArea workArea = GetMonitorWorkArea(target);
+        if (!_hasCachedWorkArea || forceUpdate)
+        {
+            RefreshMonitorWorkArea(target);
+        }
+
+        MonitorWorkArea workArea = _cachedWorkArea;
         double scaleFactor = workArea.Dpi / (double)StandardDpi;
 
         int physicalWidth = (int)Math.Round(logicalWidth * scaleFactor);
@@ -224,6 +269,7 @@ public sealed class WindowManager : IDisposable
             physicalWidth == _appliedPhysicalWidth &&
             physicalHeight == _appliedPhysicalHeight)
         {
+            UpdateInteractiveBoundsAndPassthroughRegions();
             return;
         }
 
@@ -231,6 +277,8 @@ public sealed class WindowManager : IDisposable
         _appliedTop = notchTop;
         _appliedPhysicalWidth = physicalWidth;
         _appliedPhysicalHeight = physicalHeight;
+
+        UpdateInteractiveBoundsAndPassthroughRegions();
 
         uint visibilityFlag = IsWindowVisible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW;
 
@@ -242,6 +290,83 @@ public sealed class WindowManager : IDisposable
             physicalWidth,
             physicalHeight,
             SWP_NOACTIVATE | visibilityFlag);
+    }
+
+    private void UpdateInteractiveBoundsAndPassthroughRegions()
+    {
+        if (!_hasCachedWorkArea || _appliedPhysicalWidth <= 0 || _appliedPhysicalHeight <= 0)
+        {
+            return;
+        }
+
+        double scaleFactor = _cachedWorkArea.Dpi / (double)StandardDpi;
+        int pillPhysicalWidth = Math.Clamp((int)Math.Round(_interactiveLogicalWidth * scaleFactor), 0, _appliedPhysicalWidth);
+        int pillPhysicalHeight = Math.Clamp((int)Math.Round(_interactiveLogicalHeight * scaleFactor), 0, _appliedPhysicalHeight);
+
+        int localLeft = Math.Max(0, (_appliedPhysicalWidth - pillPhysicalWidth) / 2);
+        int localTop = 0;
+        int localRight = Math.Min(_appliedPhysicalWidth, localLeft + pillPhysicalWidth);
+        int localBottom = Math.Min(_appliedPhysicalHeight, pillPhysicalHeight);
+
+        _interactivePhysicalLeft = _appliedLeft + localLeft;
+        _interactivePhysicalTop = _appliedTop + localTop;
+        _interactivePhysicalRight = _appliedLeft + localRight;
+        _interactivePhysicalBottom = _appliedTop + localBottom;
+
+        ApplyNonClientPassthroughRegions(localLeft, localRight, localBottom, _appliedPhysicalWidth, _appliedPhysicalHeight);
+    }
+
+    private void ApplyNonClientPassthroughRegions(
+        int pillLocalLeft,
+        int pillLocalRight,
+        int pillLocalBottom,
+        int hostPhysicalWidth,
+        int hostPhysicalHeight)
+    {
+        if (_isDisposed || hostPhysicalWidth <= 0 || hostPhysicalHeight <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            InputNonClientPointerSource? nonClientSource = InputNonClientPointerSource.GetForWindowId(_windowId);
+            if (nonClientSource is null)
+            {
+                return;
+            }
+
+            List<RectInt32> passthroughRects = new(3);
+
+            if (pillLocalLeft > 0)
+            {
+                passthroughRects.Add(new RectInt32(0, 0, pillLocalLeft, hostPhysicalHeight));
+            }
+
+            if (hostPhysicalWidth > pillLocalRight)
+            {
+                passthroughRects.Add(new RectInt32(pillLocalRight, 0, hostPhysicalWidth - pillLocalRight, hostPhysicalHeight));
+            }
+
+            int centerWidth = pillLocalRight - pillLocalLeft;
+            if (centerWidth > 0 && hostPhysicalHeight > pillLocalBottom)
+            {
+                passthroughRects.Add(new RectInt32(pillLocalLeft, pillLocalBottom, centerWidth, hostPhysicalHeight - pillLocalBottom));
+            }
+
+            if (passthroughRects.Count > 0)
+            {
+                nonClientSource.SetRegionRects(NonClientRegionKind.Passthrough, passthroughRects.ToArray());
+            }
+            else
+            {
+                nonClientSource.ClearRegionRects(NonClientRegionKind.Passthrough);
+            }
+        }
+        catch
+        {
+            // Ignore if InputNonClientPointerSource is not yet attached or during window teardown.
+        }
     }
 
     public bool IsCursorInsideLogicalBounds(double logicalWidth, double logicalHeight)
@@ -261,6 +386,15 @@ public sealed class WindowManager : IDisposable
             return false;
         }
 
+        if (_interactivePhysicalRight > _interactivePhysicalLeft &&
+            _interactivePhysicalBottom > _interactivePhysicalTop)
+        {
+            return screenX >= _interactivePhysicalLeft &&
+                   screenX < _interactivePhysicalRight &&
+                   screenY >= _interactivePhysicalTop &&
+                   screenY < _interactivePhysicalBottom;
+        }
+
         return IsScreenPointInsideLogicalBounds(screenX, screenY, _interactiveLogicalWidth, _interactiveLogicalHeight);
     }
 
@@ -270,7 +404,12 @@ public sealed class WindowManager : IDisposable
         double logicalWidth,
         double logicalHeight)
     {
-        MonitorWorkArea workArea = GetMonitorWorkArea(_monitorTarget);
+        if (!_hasCachedWorkArea)
+        {
+            RefreshMonitorWorkArea(_monitorTarget);
+        }
+
+        MonitorWorkArea workArea = _cachedWorkArea;
         double scaleFactor = workArea.Dpi / (double)StandardDpi;
 
         int physicalWidth = (int)Math.Round(logicalWidth * scaleFactor);
@@ -337,9 +476,6 @@ public sealed class WindowManager : IDisposable
         exStyle |= WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
         SetWindowLongPtr(_hwnd, GWL_EXSTYLE, exStyle);
 
-        // Exclude the persistent Notch window from screen captures so primary display screenshots never contain a duplicate Notch.
-        SetWindowDisplayAffinity(_hwnd, WDA_EXCLUDEFROMCAPTURE);
-
         SetWindowPos(
             _hwnd,
             HWND_TOPMOST,
@@ -353,7 +489,27 @@ public sealed class WindowManager : IDisposable
     private void ConfigurePerPixelTransparency()
     {
         // Suppress WinUI 3's default opaque theme background fill on the root visual.
-        _window.SystemBackdrop = new TransparentWindowBackdrop();
+        try
+        {
+            if (_window.SystemBackdrop is not TransparentWindowBackdrop)
+            {
+                _window.SystemBackdrop = new TransparentWindowBackdrop();
+            }
+        }
+        catch
+        {
+            try
+            {
+                var backdropTarget = _window.As<ICompositionSupportsSystemBackdrop>();
+                _fallbackTransparentBrush ??= TransparentWindowBackdrop.SystemCompositor.CreateColorBrush(
+                    global::Windows.UI.Color.FromArgb(0, 0, 0, 0));
+                backdropTarget.SystemBackdrop = _fallbackTransparentBrush;
+            }
+            catch
+            {
+                // Ignore if backdrop target cannot be queried at this moment.
+            }
+        }
 
         // Suppress Windows 11 DWM outer rectangular border and system corner rounding on the host HWND.
         if (WindowsPlatformInfo.IsWindows11OrGreater())
@@ -403,6 +559,38 @@ public sealed class WindowManager : IDisposable
                 DeleteObject(emptyRegion);
             }
         }
+
+        nint hdc = GetDC(_hwnd);
+        if (hdc != nint.Zero)
+        {
+            try
+            {
+                ClearClientBackground(hdc);
+            }
+            finally
+            {
+                ReleaseDC(_hwnd, hdc);
+            }
+        }
+    }
+
+    private void ClearClientBackground(nint hdc)
+    {
+        if (GetClientRect(_hwnd, out RECT rect))
+        {
+            if (_blackGdiBrush == nint.Zero)
+            {
+                _blackGdiBrush = CreateSolidBrush(0);
+            }
+
+            FillRect(hdc, ref rect, _blackGdiBrush);
+        }
+    }
+
+    private void RefreshMonitorWorkArea(MonitorPlacementTarget target)
+    {
+        _cachedWorkArea = GetMonitorWorkArea(target);
+        _hasCachedWorkArea = true;
     }
 
     private MonitorWorkArea GetMonitorWorkArea(MonitorPlacementTarget target)
@@ -482,8 +670,8 @@ public sealed class WindowManager : IDisposable
                 }
                 return 0;
 
-            case WM_NCCALCSIZE when wParam != 0:
-                // Returning 0 removes the residual non-client top border inset so the client area is flush with Y = workAreaTop.
+            case WM_NCCALCSIZE:
+                // Returning 0 removes all non-client frame insets so the client area is flush with Y = workAreaTop.
                 return 0;
 
             case WM_NCHITTEST:
@@ -492,21 +680,35 @@ public sealed class WindowManager : IDisposable
                     return HTTRANSPARENT;
                 }
 
-                // Make the transparent outer shadow margin click-through so only the active pill receives pointer input.
-                if (_interactiveLogicalWidth > 0 &&
-                    _interactiveLogicalHeight > 0 &&
-                    !IsCursorInsideLogicalBounds(_interactiveLogicalWidth, _interactiveLogicalHeight))
+                // O(1) hit-test using screen coordinates packed in lParam with zero Win32 P/Invokes.
+                if (_interactiveLogicalWidth > 0 && _interactiveLogicalHeight > 0)
                 {
-                    CursorOutsideInteractiveBoundsDetected?.Invoke(this, EventArgs.Empty);
-                    return HTTRANSPARENT;
+                    long rawLParam = lParam.ToInt64();
+                    int screenX = unchecked((short)(rawLParam & 0xFFFF));
+                    int screenY = unchecked((short)((rawLParam >> 16) & 0xFFFF));
+
+                    if (!IsScreenPointInsideInteractivePill(screenX, screenY))
+                    {
+                        if (_wasCursorInsideInteractivePill)
+                        {
+                            _wasCursorInsideInteractivePill = false;
+                            CursorOutsideInteractiveBoundsDetected?.Invoke(this, EventArgs.Empty);
+                        }
+
+                        return HTTRANSPARENT;
+                    }
+
+                    _wasCursorInsideInteractivePill = true;
                 }
                 break;
 
             case WM_ERASEBKGND:
-                // Prevent Win32 GDI from painting an opaque background rect behind the DirectComposition surface.
+                // Clear GDI background to 0x00000000 so DWM composites the non-pill client area transparently.
+                ClearClientBackground((nint)wParam);
                 return 1;
 
             case WM_DPICHANGED:
+                RefreshMonitorWorkArea(_monitorTarget);
                 if (_currentLogicalWidth > 0 && _currentLogicalHeight > 0)
                 {
                     UpdatePositionAndSize(_currentLogicalWidth, _currentLogicalHeight, _monitorTarget, forceUpdate: true);
@@ -515,6 +717,7 @@ public sealed class WindowManager : IDisposable
 
             case WM_DISPLAYCHANGE:
             case WM_SETTINGCHANGE when wParam == SPI_SETWORKAREA:
+                RefreshMonitorWorkArea(_monitorTarget);
                 if (_currentLogicalWidth > 0 && _currentLogicalHeight > 0)
                 {
                     UpdatePositionAndSize(_currentLogicalWidth, _currentLogicalHeight, _monitorTarget, forceUpdate: true);
@@ -572,25 +775,16 @@ public sealed class WindowManager : IDisposable
             _isSubclassed = false;
         }
 
+        _fallbackTransparentBrush?.Dispose();
+        _fallbackTransparentBrush = null;
+
+        if (_blackGdiBrush != nint.Zero)
+        {
+            DeleteObject(_blackGdiBrush);
+            _blackGdiBrush = nint.Zero;
+        }
+
         _isDisposed = true;
-    }
-
-    /// <summary>
-    /// Clears WinUI 3's default opaque theme background brush so areas outside the Notch pill are transparent.
-    /// </summary>
-    private sealed class TransparentWindowBackdrop : SystemBackdrop
-    {
-        protected override void OnTargetConnected(ICompositionSupportsSystemBackdrop connectedTarget, XamlRoot xamlRoot)
-        {
-            base.OnTargetConnected(connectedTarget, xamlRoot);
-            connectedTarget.SystemBackdrop = null;
-        }
-
-        protected override void OnTargetDisconnected(ICompositionSupportsSystemBackdrop disconnectedTarget)
-        {
-            disconnectedTarget.SystemBackdrop = null;
-            base.OnTargetDisconnected(disconnectedTarget);
-        }
     }
 
     private delegate nint SubclassProc(
@@ -701,12 +895,6 @@ public sealed class WindowManager : IDisposable
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint hwnd);
 
-    private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool SetWindowDisplayAffinity(nint hWnd, uint dwAffinity);
-
     [DllImport("shcore.dll")]
     private static extern int GetDpiForMonitor(
         nint hmonitor,
@@ -741,6 +929,22 @@ public sealed class WindowManager : IDisposable
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool DeleteObject(nint hObject);
 
+    [DllImport("gdi32.dll")]
+    private static extern nint CreateSolidBrush(uint crColor);
+
+    [DllImport("user32.dll")]
+    private static extern int FillRect(nint hDC, ref RECT lprc, nint hbr);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetClientRect(nint hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetDC(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(nint hWnd, nint hDC);
+
     [DllImport("comctl32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetWindowSubclass(
@@ -762,4 +966,97 @@ public sealed class WindowManager : IDisposable
         uint uMsg,
         nuint wParam,
         nint lParam);
+}
+
+/// <summary>
+/// Custom <see cref="SystemBackdrop"/> that attaches a transparent <see cref="global::Windows.UI.Composition.CompositionColorBrush"/>
+/// to the WinUI 3 window so areas outside the Notch pill render 100% per-pixel transparent.
+/// Must be a <c>public partial</c> class at namespace scope for CsWinRT projection marshaling.
+/// </summary>
+public sealed partial class TransparentWindowBackdrop : SystemBackdrop
+{
+    private static readonly object SyncLock = new();
+    private static nint _dispatcherQueueController;
+    private static global::Windows.UI.Composition.Compositor? _systemCompositor;
+
+    private global::Windows.UI.Composition.CompositionColorBrush? _brush;
+
+    internal static global::Windows.UI.Composition.Compositor SystemCompositor
+    {
+        get
+        {
+            if (_systemCompositor is null)
+            {
+                lock (SyncLock)
+                {
+                    if (_systemCompositor is null)
+                    {
+                        EnsureDispatcherQueueController();
+                        _systemCompositor = new global::Windows.UI.Composition.Compositor();
+                    }
+                }
+            }
+
+            return _systemCompositor;
+        }
+    }
+
+    protected override void OnDefaultSystemBackdropConfigurationChanged(
+        ICompositionSupportsSystemBackdrop target,
+        XamlRoot xamlRoot)
+    {
+        if (target is not null)
+        {
+            base.OnDefaultSystemBackdropConfigurationChanged(target, xamlRoot);
+        }
+    }
+
+    protected override void OnTargetConnected(
+        ICompositionSupportsSystemBackdrop connectedTarget,
+        XamlRoot xamlRoot)
+    {
+        _brush = SystemCompositor.CreateColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0));
+        connectedTarget.SystemBackdrop = _brush;
+        base.OnTargetConnected(connectedTarget, xamlRoot);
+    }
+
+    protected override void OnTargetDisconnected(
+        ICompositionSupportsSystemBackdrop disconnectedTarget)
+    {
+        var backdrop = disconnectedTarget.SystemBackdrop;
+        disconnectedTarget.SystemBackdrop = null;
+        backdrop?.Dispose();
+        _brush?.Dispose();
+        _brush = null;
+        base.OnTargetDisconnected(disconnectedTarget);
+    }
+
+    private static void EnsureDispatcherQueueController()
+    {
+        if (global::Windows.System.DispatcherQueue.GetForCurrentThread() is null &&
+            _dispatcherQueueController == nint.Zero)
+        {
+            DispatcherQueueOptions options = new()
+            {
+                dwSize = Marshal.SizeOf<DispatcherQueueOptions>(),
+                threadType = 2,    // DQTYPE_THREAD_CURRENT
+                apartmentType = 2  // DQTAT_COM_STA
+            };
+
+            CreateDispatcherQueueController(options, out _dispatcherQueueController);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct DispatcherQueueOptions
+    {
+        internal int dwSize;
+        internal int threadType;
+        internal int apartmentType;
+    }
+
+    [DllImport("CoreMessaging.dll")]
+    private static extern int CreateDispatcherQueueController(
+        [In] DispatcherQueueOptions options,
+        out nint dispatcherQueueController);
 }

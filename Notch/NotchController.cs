@@ -27,9 +27,9 @@ public readonly record struct NotchDimensions(
     float ShadowOpacity,
     float ShadowOffsetY)
 {
-    public double HostCanvasWidth => LogicalWidth + DesignTokens.Surface.ShadowAllowanceHorizontal;
+    public double HostCanvasWidth => DesignTokens.Surface.HostCanvasWidth;
 
-    public double HostCanvasHeight => LogicalHeight + DesignTokens.Surface.ShadowAllowanceBottom;
+    public double HostCanvasHeight => DesignTokens.Surface.HostCanvasHeight;
 }
 
 public sealed class NotchStateChangedEventArgs : EventArgs
@@ -61,6 +61,8 @@ public sealed class NotchStateChangedEventArgs : EventArgs
 /// </summary>
 public sealed class NotchController : IDisposable
 {
+    private const int TransientFeedbackPeekDurationMs = 1800;
+
     private readonly IClockService _clockService;
     private readonly IMediaService _mediaService;
     private readonly IClipboardService _clipboardService;
@@ -73,6 +75,7 @@ public sealed class NotchController : IDisposable
     private DragDropState _lastCommittedDropState = DragDropState.Empty;
     private bool _isPointerHovered;
     private bool _isUserScreenshotSessionActive;
+    private bool _isDropPreviewSessionActive;
     private bool _isDisposed;
 
     public NotchController()
@@ -318,12 +321,17 @@ public sealed class NotchController : IDisposable
     /// <summary>
     /// True when the Hover view should display the Screenshot preview:
     /// requires no active media, an available screenshot, and either no active clipboard
-    /// or an explicit user-triggered screenshot interaction during the current hover session.
+    /// or an explicit user-triggered screenshot interaction.
     /// </summary>
     public bool ShouldShowScreenshotInHover =>
         !HasActiveMedia &&
         HasActiveScreenshot &&
         (!HasActiveClipboard || _isUserScreenshotSessionActive);
+
+    public bool ShouldShowDropPreview =>
+        !HasActiveMedia &&
+        HasActiveDropPreview &&
+        (_isDropPreviewSessionActive || (!HasActiveClipboard && !HasActiveScreenshot));
 
     public bool IsPointerHovered => _isPointerHovered;
 
@@ -463,9 +471,9 @@ public sealed class NotchController : IDisposable
             return false;
         }
 
-        // If a dropped file preview is available and no higher-priority Media, Clipboard, or Screenshot is active,
+        // If a dropped file preview is the most recent active session (or no higher-priority item is active),
         // hovering opens the DropTarget preview surface (300x64).
-        if (!HasActiveMedia && !HasActiveClipboard && !HasActiveScreenshot && HasActiveDropPreview)
+        if (ShouldShowDropPreview)
         {
             return TryTransitionTo(NotchState.DropTarget);
         }
@@ -517,6 +525,7 @@ public sealed class NotchController : IDisposable
 
         _isPointerHovered = true;
         _isUserScreenshotSessionActive = true;
+        _isDropPreviewSessionActive = false;
         CancelPendingCollapse();
         return TryTransitionTo(NotchState.ScreenshotHistory);
     }
@@ -539,6 +548,7 @@ public sealed class NotchController : IDisposable
         }
 
         _isUserScreenshotSessionActive = true;
+        _isDropPreviewSessionActive = false;
         CancelPendingCollapse();
 
         if (CurrentState == NotchState.ScreenshotHistory)
@@ -568,7 +578,6 @@ public sealed class NotchController : IDisposable
         }
 
         _isPointerHovered = false;
-        _isUserScreenshotSessionActive = false;
         return TryTransitionTo(ResolveCollapsedRestState());
     }
 
@@ -584,12 +593,16 @@ public sealed class NotchController : IDisposable
             return;
         }
 
-        CancelPendingCollapse();
-
         // When leaving Expanded media, return to Hover first, then apply the 300ms leave grace period.
         if (CurrentState == NotchState.Expanded)
         {
+            CancelPendingCollapse();
             TryTransitionTo(NotchState.Hover);
+        }
+        else if (_collapseDelayCts is not null)
+        {
+            // Do not restart an already-running collapse countdown on subsequent mouse moves outside the pill.
+            return;
         }
 
         CancellationTokenSource cts = new();
@@ -610,13 +623,54 @@ public sealed class NotchController : IDisposable
             return;
         }
 
+        if (ReferenceEquals(_collapseDelayCts, cts))
+        {
+            _collapseDelayCts.Dispose();
+            _collapseDelayCts = null;
+        }
+
         if (isPointerStillInsideCheck is not null && isPointerStillInsideCheck())
         {
             return;
         }
 
         _isPointerHovered = false;
-        _isUserScreenshotSessionActive = false;
+        TryTransitionTo(ResolveCollapsedRestState());
+    }
+
+    private async void ScheduleTransientFeedbackAutoCollapse(int delayMs)
+    {
+        if (_isDisposed || _isPointerHovered || HasActiveDrag)
+        {
+            return;
+        }
+
+        CancelPendingCollapse();
+
+        CancellationTokenSource cts = new();
+        _collapseDelayCts = cts;
+        CancellationToken token = cts.Token;
+
+        try
+        {
+            await Task.Delay(delayMs, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (_isDisposed || token.IsCancellationRequested || _isPointerHovered || HasActiveDrag)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(_collapseDelayCts, cts))
+        {
+            _collapseDelayCts.Dispose();
+            _collapseDelayCts = null;
+        }
+
         TryTransitionTo(ResolveCollapsedRestState());
     }
 
@@ -712,6 +766,7 @@ public sealed class NotchController : IDisposable
         }
 
         _isUserScreenshotSessionActive = true;
+        _isDropPreviewSessionActive = false;
         bool captured = await _screenshotService.CapturePrimaryDisplayAsync();
         if (!captured && !HasActiveScreenshot)
         {
@@ -809,7 +864,6 @@ public sealed class NotchController : IDisposable
 
         IsNotchVisible = false;
         _isPointerHovered = false;
-        _isUserScreenshotSessionActive = false;
         CancelPendingCollapse();
         TryTransitionTo(ResolveCollapsedRestState());
         _systemTrayService.UpdateNotchVisibility(false);
@@ -867,6 +921,36 @@ public sealed class NotchController : IDisposable
             canAcceptDrag: () => CanAcceptDrag);
     }
 
+    public void NotifyExternalDragEnter()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _dragDropService.OnExternalDragEnter();
+    }
+
+    public void NotifyExternalDragLeave()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _dragDropService.OnExternalDragLeave();
+    }
+
+    public bool TryAcceptExternalFileDrop(string? filePath)
+    {
+        if (_isDisposed)
+        {
+            return false;
+        }
+
+        return _dragDropService.TryAcceptDroppedFilePath(filePath);
+    }
+
     public bool OnDragEnter()
     {
         if (!CanAcceptDrag)
@@ -891,7 +975,7 @@ public sealed class NotchController : IDisposable
         if (pointerInside)
         {
             _isPointerHovered = true;
-            if (!HasActiveMedia && !HasActiveClipboard && !HasActiveScreenshot && HasActiveDropPreview)
+            if (ShouldShowDropPreview)
             {
                 return;
             }
@@ -901,7 +985,6 @@ public sealed class NotchController : IDisposable
         else
         {
             _isPointerHovered = false;
-            _isUserScreenshotSessionActive = false;
             TryTransitionTo(ResolveCollapsedRestState());
         }
     }
@@ -915,6 +998,7 @@ public sealed class NotchController : IDisposable
 
         _isPointerHovered = true;
         _isUserScreenshotSessionActive = false;
+        _isDropPreviewSessionActive = true;
         CancelPendingCollapse();
         TryTransitionTo(NotchState.DropTarget);
     }
@@ -926,6 +1010,7 @@ public sealed class NotchController : IDisposable
             return;
         }
 
+        _isDropPreviewSessionActive = false;
         _dragDropService.Clear();
     }
 
@@ -1013,6 +1098,11 @@ public sealed class NotchController : IDisposable
             return NotchState.Media;
         }
 
+        if (_isUserScreenshotSessionActive && HasActiveScreenshot)
+        {
+            return NotchState.Screenshot;
+        }
+
         if (HasActiveClipboard)
         {
             return NotchState.Clipboard;
@@ -1055,6 +1145,7 @@ public sealed class NotchController : IDisposable
             if (HasActiveMedia)
             {
                 _isUserScreenshotSessionActive = false;
+                _isDropPreviewSessionActive = false;
             }
 
             if (!HasActiveMedia && CurrentState == NotchState.Expanded)
@@ -1082,14 +1173,24 @@ public sealed class NotchController : IDisposable
         {
             // A fresh clipboard copy returns hover priority to Clipboard unless the user triggers another screenshot.
             _isUserScreenshotSessionActive = false;
-        }
-
-        if (!_isPointerHovered && !HasActiveDrag && IsCollapsedState(CurrentState))
-        {
-            TryTransitionTo(ResolveCollapsedRestState());
+            _isDropPreviewSessionActive = false;
         }
 
         ClipboardStateChanged?.Invoke(this, newClipboardState);
+
+        if (!_isPointerHovered && !HasActiveDrag && IsCollapsedState(CurrentState))
+        {
+            if (newClipboardState.IsAvailable && IsNotchVisible && !HasActiveMedia)
+            {
+                // Briefly peek the Hover preview for 1.8s so the user gets immediate visual feedback on Ctrl+C.
+                TryTransitionTo(NotchState.Hover);
+                ScheduleTransientFeedbackAutoCollapse(TransientFeedbackPeekDurationMs);
+            }
+            else
+            {
+                TryTransitionTo(ResolveCollapsedRestState());
+            }
+        }
     }
 
     private void OnScreenshotServiceStateChanged(object? sender, ScreenshotState newScreenshotState)
@@ -1103,14 +1204,28 @@ public sealed class NotchController : IDisposable
         {
             _isUserScreenshotSessionActive = false;
         }
-
-        // Screenshot updates never interrupt Expanded media, ScreenshotHistory, active drag/drop, or force-open the Notch.
-        if (!_isPointerHovered && !HasActiveDrag && IsCollapsedState(CurrentState))
+        else
         {
-            TryTransitionTo(ResolveCollapsedRestState());
+            _isUserScreenshotSessionActive = true;
+            _isDropPreviewSessionActive = false;
         }
 
         ScreenshotStateChanged?.Invoke(this, newScreenshotState);
+
+        // Screenshot updates never interrupt Expanded media, ScreenshotHistory, active drag/drop, or unhide a hidden Notch.
+        if (!_isPointerHovered && !HasActiveDrag && IsCollapsedState(CurrentState))
+        {
+            if (newScreenshotState.IsAvailable && IsNotchVisible && !HasActiveMedia)
+            {
+                // Briefly peek the Screenshot Hover preview for 1.8s when captured via Ctrl+Shift+S while collapsed.
+                TryTransitionTo(NotchState.Hover);
+                ScheduleTransientFeedbackAutoCollapse(TransientFeedbackPeekDurationMs);
+            }
+            else
+            {
+                TryTransitionTo(ResolveCollapsedRestState());
+            }
+        }
     }
 
     private void OnScreenshotServiceRecentChanged(object? sender, EventArgs e)
@@ -1151,6 +1266,7 @@ public sealed class NotchController : IDisposable
             _lastCommittedDropState = newDragDropState;
             _isPointerHovered = true;
             _isUserScreenshotSessionActive = false;
+            _isDropPreviewSessionActive = true;
             DragDropStateChanged?.Invoke(this, newDragDropState);
             OnFileDropped(newDragDropState);
         }
@@ -1159,6 +1275,7 @@ public sealed class NotchController : IDisposable
             if (!newDragDropState.HasDropPreview)
             {
                 _lastCommittedDropState = DragDropState.Empty;
+                _isDropPreviewSessionActive = false;
             }
 
             DragDropStateChanged?.Invoke(this, newDragDropState);

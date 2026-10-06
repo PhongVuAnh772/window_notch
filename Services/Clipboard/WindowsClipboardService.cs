@@ -47,8 +47,6 @@ public sealed class WindowsClipboardService : IClipboardService
 
     public void Start(nint windowHandle)
     {
-        bool shouldPerformInitialRead = false;
-
         lock (_syncLock)
         {
             if (_isDisposed || _isRunning || windowHandle == nint.Zero)
@@ -69,14 +67,11 @@ public sealed class WindowsClipboardService : IClipboardService
                 _isListenerRegistered = false;
             }
 
+            // Record baseline sequence number at startup so stale pre-launch clipboard content
+            // does not immediately override Calendar, DropPreview, or Screenshot indicators.
+            // Only new clipboard updates (WM_CLIPBOARDUPDATE) during the app session are published.
+            _lastSequenceNumber = SafeGetClipboardSequenceNumber();
             _isRunning = true;
-            shouldPerformInitialRead = _isListenerRegistered;
-        }
-
-        if (shouldPerformInitialRead)
-        {
-            // Single non-blocking initial read; if clipboard is locked by another process, retain ClipboardState.None.
-            TryReadAndPublishClipboard(isInitialRead: true);
         }
     }
 

@@ -422,9 +422,9 @@ Border Stroke Width:
 1px
 
 Border Opacity:
-0.07 — Idle
-0.14 — Hover
-0.16 — Expanded
+0.12 — Idle
+0.18 — Hover
+0.22 — Expanded
 
 Border Highlight Alpha (Top / Bottom):
 0xFF — Top Stop
@@ -446,7 +446,11 @@ Shadow Vertical Offset:
 6px — Expanded
 
 Shadow Canvas Allowance (prevents clipping soft shadow blur):
-32 — Horizontal
-20 — Bottom
+72 — Horizontal (36px per side)
+52 — Bottom
+
+Fixed Host Canvas Size (prevents Win32 SetWindowPos jitter during state transitions):
+452 × 172
+
 
 

@@ -34,13 +34,13 @@
 
     <!-- Subtle Surface & Inner Depth Brushes (.antigravity/design.md) -->
     <LinearGradientBrush x:Key="NotchSurfaceGlassBrush" StartPoint="0.5,0" EndPoint="0.5,1">
-        <GradientStop Color="{StaticResource NotchSurfaceColor}" Offset="0.0" />
-        <GradientStop Color="{StaticResource NotchBackgroundColor}" Offset="1.0" />
+        <GradientStop Color="{StaticResource NotchBackgroundColor}" Offset="0.0" />
+        <GradientStop Color="{StaticResource NotchSurfaceColor}" Offset="1.0" />
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="NotchInnerDepthBrush" StartPoint="0.5,0" EndPoint="0.5,1">
-        <GradientStop Color="{StaticResource NotchElevatedColor}" Offset="0.0" />
-        <GradientStop Color="#000D0D0F" Offset="0.65" />
+        <GradientStop Color="#000D0D0F" Offset="0.35" />
+        <GradientStop Color="{StaticResource NotchElevatedColor}" Offset="1.0" />
     </LinearGradientBrush>
 
     <!-- Spacing (.antigravity/design.md) -->
@@ -174,5 +174,7 @@
     <x:Double x:Key="NotchScreenshotHistoryHeight">120</x:Double>
     <x:Double x:Key="NotchExpandedWidth">420</x:Double>
     <x:Double x:Key="NotchExpandedHeight">260</x:Double>
+    <x:Double x:Key="NotchHostCanvasWidth">452</x:Double>
+    <x:Double x:Key="NotchHostCanvasHeight">172</x:Double>
 
 </ResourceDictionary>

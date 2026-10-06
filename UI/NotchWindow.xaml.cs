@@ -8,7 +8,9 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Foundation;
+using Windows.Storage;
 using Windows.Storage.Streams;
 using Windows.System;
 using WindowsNotch.Animation;
@@ -80,6 +82,8 @@ public sealed partial class NotchWindow : Window
     private bool _isClockScreenshotButtonPressed;
     private bool _isClipboardScreenshotButtonHovered;
     private bool _isClipboardScreenshotButtonPressed;
+    private bool _isCalendarScreenshotButtonHovered;
+    private bool _isCalendarScreenshotButtonPressed;
     private bool _isScreenshotHistoryButtonHovered;
     private bool _isScreenshotHistoryButtonPressed;
     private bool _isScreenshotRecaptureButtonHovered;
@@ -157,6 +161,7 @@ public sealed partial class NotchWindow : Window
         AttachTransportButtonHandlers(NextTrackButton);
         AttachTransportButtonHandlers(ClockScreenshotButton);
         AttachTransportButtonHandlers(ClipboardScreenshotButton);
+        AttachTransportButtonHandlers(CalendarScreenshotButton);
         AttachTransportButtonHandlers(ScreenshotHistoryButton);
         AttachTransportButtonHandlers(ScreenshotRecaptureButton);
 
@@ -234,6 +239,7 @@ public sealed partial class NotchWindow : Window
         _animator.InitializeMediaControlButton(NextTrackButton, NextButtonBg, NextButtonIcon);
         _animator.InitializeMediaControlButton(ClockScreenshotButton, ClockScreenshotButtonBg, ClockScreenshotButtonIcon);
         _animator.InitializeMediaControlButton(ClipboardScreenshotButton, ClipboardScreenshotButtonBg, ClipboardScreenshotButtonIcon);
+        _animator.InitializeMediaControlButton(CalendarScreenshotButton, CalendarScreenshotButtonBg, CalendarScreenshotButtonIcon);
         _animator.InitializeMediaControlButton(ScreenshotHistoryButton, ScreenshotHistoryButtonBg, ScreenshotHistoryButtonIcon);
         _animator.InitializeMediaControlButton(ScreenshotRecaptureButton, ScreenshotRecaptureButtonBg, ScreenshotRecaptureButtonIcon);
 
@@ -316,6 +322,11 @@ public sealed partial class NotchWindow : Window
             return;
         }
 
+        if (!IsPointerPointInsideActivePill(e))
+        {
+            return;
+        }
+
         _controller.OnPointerEntered();
     }
 
@@ -323,6 +334,16 @@ public sealed partial class NotchWindow : Window
     {
         if (!_controller.IsNotchVisible)
         {
+            return;
+        }
+
+        if (!IsPointerPointInsideActivePill(e))
+        {
+            if (!_isSeeking && !NotchController.IsCollapsedState(_controller.CurrentState))
+            {
+                _controller.OnPointerExited(IsCursorStillInsideActiveNotchPill);
+            }
+
             return;
         }
 
@@ -343,6 +364,84 @@ public sealed partial class NotchWindow : Window
         }
 
         _controller.OnPointerExited(IsCursorStillInsideActiveNotchPill);
+    }
+
+    private bool IsPointerPointInsideActivePill(PointerRoutedEventArgs e)
+    {
+        NotchDimensions active = _controller.GetDimensionsForCurrentState();
+        Point pt = e.GetCurrentPoint(NotchSurface).Position;
+        double pillLeft = (DesignTokens.Surface.HostCanvasWidth - active.LogicalWidth) * 0.5;
+        double pillRight = pillLeft + active.LogicalWidth;
+        return pt.X >= pillLeft && pt.X <= pillRight && pt.Y >= 0.0 && pt.Y <= active.LogicalHeight;
+    }
+
+    private void OnNotchDragEnter(object sender, DragEventArgs e)
+    {
+        HandleNotchDragEnterOrOver(e);
+    }
+
+    private void OnNotchDragOver(object sender, DragEventArgs e)
+    {
+        HandleNotchDragEnterOrOver(e);
+    }
+
+    private void HandleNotchDragEnterOrOver(DragEventArgs e)
+    {
+        if (!_controller.CanAcceptDrag || !e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            e.AcceptedOperation = DataPackageOperation.None;
+            return;
+        }
+
+        e.AcceptedOperation = DataPackageOperation.Copy;
+        if (e.DragUIOverride is not null)
+        {
+            e.DragUIOverride.IsCaptionVisible = false;
+            e.DragUIOverride.IsGlyphVisible = false;
+        }
+
+        _controller.NotifyExternalDragEnter();
+    }
+
+    private void OnNotchDragLeave(object sender, DragEventArgs e)
+    {
+        _controller.NotifyExternalDragLeave();
+    }
+
+    private async void OnNotchDrop(object sender, DragEventArgs e)
+    {
+        if (!_controller.CanAcceptDrag || !e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            _controller.NotifyExternalDragLeave();
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<IStorageItem> items = await e.DataView.GetStorageItemsAsync();
+            string? firstPath = null;
+            foreach (IStorageItem item in items)
+            {
+                if (!string.IsNullOrWhiteSpace(item.Path))
+                {
+                    firstPath = item.Path;
+                    break;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(firstPath))
+            {
+                _controller.TryAcceptExternalFileDrop(firstPath);
+            }
+            else
+            {
+                _controller.NotifyExternalDragLeave();
+            }
+        }
+        catch
+        {
+            _controller.NotifyExternalDragLeave();
+        }
     }
 
     private void OnWindowManagerCursorOutsideInteractiveBoundsDetected(object? sender, EventArgs e)
@@ -812,6 +911,25 @@ public sealed partial class NotchWindow : Window
                 _isClipboardScreenshotButtonHovered,
                 _isClipboardScreenshotButtonPressed);
         }
+        else if (ReferenceEquals(sender, CalendarScreenshotButton))
+        {
+            if (isHovered.HasValue)
+            {
+                _isCalendarScreenshotButtonHovered = isHovered.Value;
+            }
+
+            if (isPressed.HasValue)
+            {
+                _isCalendarScreenshotButtonPressed = isPressed.Value;
+            }
+
+            _animator.AnimateMediaControlButtonState(
+                CalendarScreenshotButton,
+                CalendarScreenshotButtonBg,
+                CalendarScreenshotButtonIcon,
+                _isCalendarScreenshotButtonHovered,
+                _isCalendarScreenshotButtonPressed);
+        }
         else if (ReferenceEquals(sender, ScreenshotHistoryButton))
         {
             if (isHovered.HasValue)
@@ -916,6 +1034,9 @@ public sealed partial class NotchWindow : Window
         ClipboardHoverViewHost.IsHitTestVisible = showClipboardInHover;
         ClipboardScreenshotButton.IsEnabled = showClipboardInHover;
 
+        CalendarHoverViewHost.IsHitTestVisible = showCalendarInHover;
+        CalendarScreenshotButton.IsEnabled = showCalendarInHover;
+
         ScreenshotPreviewViewHost.IsHitTestVisible = showScreenshotInHover;
         ScreenshotHistoryButton.IsEnabled = showScreenshotInHover && hasRecentScreenshots;
         ScreenshotRecaptureButton.IsEnabled = showScreenshotInHover;
@@ -963,6 +1084,13 @@ public sealed partial class NotchWindow : Window
             _isClipboardScreenshotButtonHovered = false;
             _isClipboardScreenshotButtonPressed = false;
             _animator.InitializeMediaControlButton(ClipboardScreenshotButton, ClipboardScreenshotButtonBg, ClipboardScreenshotButtonIcon);
+        }
+
+        if (!showCalendarInHover)
+        {
+            _isCalendarScreenshotButtonHovered = false;
+            _isCalendarScreenshotButtonPressed = false;
+            _animator.InitializeMediaControlButton(CalendarScreenshotButton, CalendarScreenshotButtonBg, CalendarScreenshotButtonIcon);
         }
 
         if (!showScreenshotInHover)
@@ -2049,6 +2177,8 @@ public sealed partial class NotchWindow : Window
         }
 
         NotchDimensions target = e.TargetDimensions;
+        double hostWidth = target.HostCanvasWidth;
+        double hostHeight = target.HostCanvasHeight;
         bool hasMedia = _controller.HasActiveMedia;
         bool hasClipboard = _controller.HasActiveClipboard;
         bool hasScreenshot = _controller.HasActiveScreenshot;
@@ -2067,13 +2197,8 @@ public sealed partial class NotchWindow : Window
                 ReleaseDecodedScreenshotHistoryBitmaps();
             }
 
-            double hostWidth = target.HostCanvasWidth;
-            double hostHeight = target.HostCanvasHeight;
-
             ApplyMediaLayoutForState(NotchState.Expanded);
-            ApplyHostCanvasBounds(hostWidth, hostHeight);
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-            _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
 
             UpdateMediaInteractivity(NotchState.Expanded, hasMedia);
             SyncTimelineToView(_controller.CurrentMediaState);
@@ -2094,13 +2219,8 @@ public sealed partial class NotchWindow : Window
         }
         else if (e.CurrentState == NotchState.ScreenshotHistory)
         {
-            double hostWidth = target.HostCanvasWidth;
-            double hostHeight = target.HostCanvasHeight;
-
             ApplyMediaLayoutForState(NotchState.Hover);
-            ApplyHostCanvasBounds(hostWidth, hostHeight);
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-            _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
 
             UpdateMediaInteractivity(NotchState.ScreenshotHistory, hasMedia);
             _animator.StopSeekTimelineInterpolation();
@@ -2127,13 +2247,8 @@ public sealed partial class NotchWindow : Window
                 ReleaseDecodedScreenshotHistoryBitmaps();
             }
 
-            double hostWidth = target.HostCanvasWidth;
-            double hostHeight = target.HostCanvasHeight;
-
             ApplyMediaLayoutForState(NotchState.Hover);
-            ApplyHostCanvasBounds(hostWidth, hostHeight);
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-            _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
 
             UpdateMediaInteractivity(NotchState.DropTarget, hasMedia);
             _animator.StopSeekTimelineInterpolation();
@@ -2158,77 +2273,44 @@ public sealed partial class NotchWindow : Window
             UpdateMediaInteractivity(NotchState.Hover, hasMedia);
             _animator.StopSeekTimelineInterpolation();
 
-            if (e.PreviousState is NotchState.Expanded or NotchState.DropTarget or NotchState.ScreenshotHistory)
-            {
-                // Shrinking from Expanded (380x88), ScreenshotHistory (380x120), or DropTarget (300x64) to Hover (220x44):
-                // keep outer canvas large until animation finishes, then release decoded history bitmaps and shrink bounds.
-                double currentHostWidth = NotchSurface.Width;
-                double currentHostHeight = NotchSurface.Height;
-                bool leavingScreenshotHistory = e.PreviousState == NotchState.ScreenshotHistory;
+            bool leavingScreenshotHistory = e.PreviousState == NotchState.ScreenshotHistory;
+            _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
 
-                _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-
-                _animator.TransitionToState(
-                    e.PreviousState,
-                    NotchState.Hover,
-                    target,
-                    currentHostWidth,
-                    currentHostHeight,
-                    hasMedia,
-                    hasClipboard,
-                    hasScreenshot,
-                    shouldShowScreenshotInHover,
-                    hasActiveDrag,
-                    hasActiveDropPreview,
-                    hasCalendarEvent,
-                    onCompleted: () =>
+            _animator.TransitionToState(
+                e.PreviousState,
+                NotchState.Hover,
+                target,
+                hostWidth,
+                hostHeight,
+                hasMedia,
+                hasClipboard,
+                hasScreenshot,
+                shouldShowScreenshotInHover,
+                hasActiveDrag,
+                hasActiveDropPreview,
+                hasCalendarEvent,
+                onCompleted: leavingScreenshotHistory
+                    ? () =>
                     {
                         if (DispatcherQueue.HasThreadAccess)
                         {
-                            if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
+                            if (_controller.CurrentState != NotchState.ScreenshotHistory)
                             {
                                 ReleaseDecodedScreenshotHistoryBitmaps();
                             }
-
-                            FinalizeHostBoundsForState(NotchState.Hover, target);
                         }
                         else
                         {
                             DispatcherQueue.TryEnqueue(() =>
                             {
-                                if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
+                                if (_controller.CurrentState != NotchState.ScreenshotHistory)
                                 {
                                     ReleaseDecodedScreenshotHistoryBitmaps();
                                 }
-
-                                FinalizeHostBoundsForState(NotchState.Hover, target);
                             });
                         }
-                    });
-            }
-            else
-            {
-                double hostWidth = target.HostCanvasWidth;
-                double hostHeight = target.HostCanvasHeight;
-
-                ApplyHostCanvasBounds(hostWidth, hostHeight);
-                _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
-                _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
-
-                _animator.TransitionToState(
-                    e.PreviousState,
-                    NotchState.Hover,
-                    target,
-                    hostWidth,
-                    hostHeight,
-                    hasMedia,
-                    hasClipboard,
-                    hasScreenshot,
-                    shouldShowScreenshotInHover,
-                    hasActiveDrag,
-                    hasActiveDropPreview,
-                    hasCalendarEvent);
-            }
+                    }
+                    : null);
         }
         else if (NotchController.IsCollapsedState(e.CurrentState))
         {
@@ -2242,18 +2324,15 @@ public sealed partial class NotchWindow : Window
                 return;
             }
 
-            double currentHostWidth = NotchSurface.Width;
-            double currentHostHeight = NotchSurface.Height;
             bool leavingScreenshotHistory = e.PreviousState == NotchState.ScreenshotHistory;
-
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
 
             _animator.TransitionToState(
                 e.PreviousState,
                 e.CurrentState,
                 target,
-                currentHostWidth,
-                currentHostHeight,
+                hostWidth,
+                hostHeight,
                 hasMedia,
                 hasClipboard,
                 hasScreenshot,
@@ -2261,61 +2340,29 @@ public sealed partial class NotchWindow : Window
                 hasActiveDrag,
                 hasActiveDropPreview,
                 hasCalendarEvent,
-                onCompleted: () =>
-                {
-                    if (DispatcherQueue.HasThreadAccess)
+                onCompleted: leavingScreenshotHistory
+                    ? () =>
                     {
-                        if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
+                        if (DispatcherQueue.HasThreadAccess)
                         {
-                            ReleaseDecodedScreenshotHistoryBitmaps();
-                        }
-
-                        FinalizeCollapsedHostBounds(target);
-                    }
-                    else
-                    {
-                        DispatcherQueue.TryEnqueue(() =>
-                        {
-                            if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
+                            if (_controller.CurrentState != NotchState.ScreenshotHistory)
                             {
                                 ReleaseDecodedScreenshotHistoryBitmaps();
                             }
-
-                            FinalizeCollapsedHostBounds(target);
-                        });
+                        }
+                        else
+                        {
+                            DispatcherQueue.TryEnqueue(() =>
+                            {
+                                if (_controller.CurrentState != NotchState.ScreenshotHistory)
+                                {
+                                    ReleaseDecodedScreenshotHistoryBitmaps();
+                                }
+                            });
+                        }
                     }
-                });
+                    : null);
         }
-    }
-
-    private void FinalizeHostBoundsForState(NotchState expectedState, NotchDimensions dimensions)
-    {
-        if (_isClosed || !_controller.IsNotchVisible || _controller.CurrentState != expectedState)
-        {
-            return;
-        }
-
-        double hostWidth = dimensions.HostCanvasWidth;
-        double hostHeight = dimensions.HostCanvasHeight;
-
-        ApplyHostCanvasBounds(hostWidth, hostHeight);
-        _animator.UpdateHostCanvasSize(hostWidth, hostHeight);
-        _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
-    }
-
-    private void FinalizeCollapsedHostBounds(NotchDimensions collapsedDimensions)
-    {
-        if (_isClosed || !_controller.IsNotchVisible || !NotchController.IsCollapsedState(_controller.CurrentState))
-        {
-            return;
-        }
-
-        double hostWidth = collapsedDimensions.HostCanvasWidth;
-        double hostHeight = collapsedDimensions.HostCanvasHeight;
-
-        ApplyHostCanvasBounds(hostWidth, hostHeight);
-        _animator.UpdateHostCanvasSize(hostWidth, hostHeight);
-        _windowManager.UpdatePositionAndSize(hostWidth, hostHeight);
     }
 
     private void ApplyHostCanvasBounds(double hostWidth, double hostHeight)
@@ -2324,10 +2371,14 @@ public sealed partial class NotchWindow : Window
         ShadowLayer.Height = hostHeight;
         NotchSurface.Width = hostWidth;
         NotchSurface.Height = hostHeight;
+        ContentHost.Width = hostWidth;
+        ContentHost.Height = hostHeight;
     }
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
     {
+        _windowManager.EnsureStylesOnActivation();
+
         if (_hasCompletedInitialActivation)
         {
             if (args.WindowActivationState != WindowActivationState.Deactivated)
@@ -2356,6 +2407,7 @@ public sealed partial class NotchWindow : Window
         DetachTransportButtonHandlers(NextTrackButton);
         DetachTransportButtonHandlers(ClockScreenshotButton);
         DetachTransportButtonHandlers(ClipboardScreenshotButton);
+        DetachTransportButtonHandlers(CalendarScreenshotButton);
         DetachTransportButtonHandlers(ScreenshotHistoryButton);
         DetachTransportButtonHandlers(ScreenshotRecaptureButton);
 

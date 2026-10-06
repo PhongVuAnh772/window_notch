@@ -282,11 +282,11 @@ public static class DesignTokens
         public const float ExpandedInnerDepthOpacity = 0.58f;
 
         public const float BorderStrokeThickness = 1.0f;
-        public const float IdleBorderOpacity = 0.07f;
-        public const float HoverBorderOpacity = 0.14f;
-        public const float ExpandedBorderOpacity = 0.16f;
-        public const byte BorderTopHighlightAlpha = 0xFF;
-        public const byte BorderBottomHighlightAlpha = 0x55;
+        public const float IdleBorderOpacity = 0.12f;
+        public const float HoverBorderOpacity = 0.18f;
+        public const float ExpandedBorderOpacity = 0.22f;
+        public const byte BorderTopHighlightAlpha = 0x55;
+        public const byte BorderBottomHighlightAlpha = 0xFF;
 
         public const float IdleShadowBlurRadius = 14.0f;
         public const float HoverShadowBlurRadius = 22.0f;
@@ -300,7 +300,10 @@ public static class DesignTokens
         public const float HoverShadowOffsetY = 4.0f;
         public const float ExpandedShadowOffsetY = 6.0f;
 
-        public const double ShadowAllowanceHorizontal = 32.0;
-        public const double ShadowAllowanceBottom = 20.0;
+        public const double ShadowAllowanceHorizontal = 72.0;
+        public const double ShadowAllowanceBottom = 52.0;
+
+        public const double HostCanvasWidth = 452.0;
+        public const double HostCanvasHeight = 172.0;
     }
 }

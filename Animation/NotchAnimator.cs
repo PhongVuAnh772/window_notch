@@ -107,9 +107,10 @@ public sealed class NotchAnimator : IDisposable
     private readonly ExpressionAnimation _borderRadiusExpression;
 
     private readonly ExpressionAnimation _pillOffsetExpression;
-    private readonly ExpressionAnimation _contentTranslationExpression;
+    private readonly ExpressionAnimation _clockTranslationExpression;
     private readonly CubicBezierEasingFunction _collapseEasing;
 
+    private double _currentTargetPillHeight = DesignTokens.NotchSize.CollapsedHeight;
     private bool _isPrimaryClockActive = true;
     private bool _isClockViewVisible = true;
     private bool _isMediaViewVisible;
@@ -135,6 +136,7 @@ public sealed class NotchAnimator : IDisposable
         _layers = layers;
 
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.ContentHost, true);
+        ElementCompositionPreview.SetIsTranslationEnabled(_layers.ClockViewHost, true);
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.PrimaryClockText, true);
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.SecondaryClockText, true);
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.SeekThumb, true);
@@ -171,16 +173,21 @@ public sealed class NotchAnimator : IDisposable
         _geometricClip = _compositor.CreateGeometricClip(_pillGeometry);
         _surfaceVisual.Clip = _geometricClip;
 
-        // 1. Pill horizontal centering & content vertical centering expressions.
+        // 1. Pill horizontal centering & clock vertical centering inside the active pill height.
+        // ContentHost stays at (0,0) inside the top-aligned 452x172 canvas so every child view's XAML hit-testing
+        // matches its visual coordinates 1:1 without any translation mismatch.
         _pillOffsetExpression = _compositor.CreateExpressionAnimation(
             "Vector2((canvasWidth - pill.Size.X) * 0.5f, 0.0f)");
         _pillOffsetExpression.SetReferenceParameter("pill", _pillGeometry);
 
-        _contentTranslationExpression = _compositor.CreateExpressionAnimation(
-            "Vector3(0.0f, (pill.Size.Y - canvasHeight) * 0.5f, 0.0f)");
-        _contentTranslationExpression.SetReferenceParameter("pill", _pillGeometry);
+        _clockTranslationExpression = _compositor.CreateExpressionAnimation(
+            "Vector3(0.0f, Max(0.0f, (pill.Size.Y - clockHeight) * 0.5f), 0.0f)");
+        _clockTranslationExpression.SetReferenceParameter("pill", _pillGeometry);
+        _clockTranslationExpression.SetScalarParameter("clockHeight", (float)DesignTokens.NotchSize.CollapsedHeight);
+        _clockViewVisual.StartAnimation("Translation", _clockTranslationExpression);
 
-        // 2. Soft Shadow layer bound to the morphing pill geometry.
+        // 2. Soft Shadow layer bound to the morphing pill geometry (inset inside corner radius so rectangular
+        // DropShadow never pokes dark sharp corners outside the rounded pill silhouette).
         _dropShadow = _compositor.CreateDropShadow();
         _dropShadow.Color = DesignTokens.Colors.Background;
 
@@ -188,11 +195,12 @@ public sealed class NotchAnimator : IDisposable
         _shadowVisual.Shadow = _dropShadow;
         ElementCompositionPreview.SetElementChildVisual(_layers.ShadowLayer, _shadowVisual);
 
-        _shadowSizeExpression = _compositor.CreateExpressionAnimation("pill.Size");
+        _shadowSizeExpression = _compositor.CreateExpressionAnimation(
+            "Vector2(Max(0.0f, pill.Size.X - pill.CornerRadius.X * 1.1f), Max(0.0f, pill.Size.Y - pill.CornerRadius.Y * 0.85f))");
         _shadowSizeExpression.SetReferenceParameter("pill", _pillGeometry);
 
         _shadowOffsetExpression = _compositor.CreateExpressionAnimation(
-            "Vector3(pill.Offset.X, pill.Offset.Y, 0.0f)");
+            "Vector3(pill.Offset.X + pill.CornerRadius.X * 0.55f, pill.Offset.Y + pill.CornerRadius.Y * 0.425f, 0.0f)");
         _shadowOffsetExpression.SetReferenceParameter("pill", _pillGeometry);
 
         _shadowVisual.StartAnimation("Size", _shadowSizeExpression);
@@ -294,6 +302,7 @@ public sealed class NotchAnimator : IDisposable
         float width = (float)initialDimensions.LogicalWidth;
         float height = (float)initialDimensions.LogicalHeight;
         float radius = (float)initialDimensions.CornerRadius;
+        _currentTargetPillHeight = initialDimensions.LogicalHeight;
 
         _pillGeometry.Size = new Vector2(width, height);
         _pillGeometry.CornerRadius = new Vector2(radius, radius);
@@ -309,6 +318,7 @@ public sealed class NotchAnimator : IDisposable
         UpdateContentCenterPoint();
         UpdateSubContentCenterPoints();
 
+        _contentVisual.Properties.InsertVector3("Translation", Vector3.Zero);
         _contentVisual.Scale = new Vector3(
             initialDimensions.ContentScale,
             initialDimensions.ContentScale,
@@ -604,9 +614,6 @@ public sealed class NotchAnimator : IDisposable
 
         _pillOffsetExpression.SetScalarParameter("canvasWidth", (float)canvasWidth);
         _pillGeometry.StartAnimation("Offset", _pillOffsetExpression);
-
-        _contentTranslationExpression.SetScalarParameter("canvasHeight", (float)canvasHeight);
-        _contentVisual.StartAnimation("Translation", _contentTranslationExpression);
     }
 
     /// <summary>
@@ -1343,6 +1350,7 @@ public sealed class NotchAnimator : IDisposable
         }
 
         int transitionVersion = ++_activeTransitionVersion;
+        _currentTargetPillHeight = targetDimensions.LogicalHeight;
 
         UpdateHostCanvasSize(hostCanvasWidth, hostCanvasHeight);
         UpdateContentCenterPoint();
@@ -1612,24 +1620,11 @@ public sealed class NotchAnimator : IDisposable
 
     private (SpriteVisual? Visual, CompositionBrush? Brush, bool IsSupported) TryCreateGlassBackdrop()
     {
-        try
-        {
-            CompositionBrush? backdropBrush = _compositor.CreateBackdropBrush();
-            if (backdropBrush is null)
-            {
-                return (null, null, false);
-            }
-
-            SpriteVisual backdropVisual = _compositor.CreateSpriteVisual();
-            backdropVisual.Brush = backdropBrush;
-            ElementCompositionPreview.SetElementChildVisual(_layers.BackdropLayer, backdropVisual);
-            return (backdropVisual, backdropBrush, true);
-        }
-        catch
-        {
-            // Graceful fallback: solid dark surface + subtle border + soft shadow remain active.
-            return (null, null, false);
-        }
+        // Note: Compositor.CreateBackdropBrush() without a Win2D GaussianBlurEffect (which requires an external
+        // Win2D dependency) only passes through raw unblurred pixels behind the window, washing out the dark
+        // obsidian Notch surface. Returning (null, null, false) activates the rich deep-obsidian gradient
+        // NotchSurfaceGlassBrush at 1.0 opacity with the inner depth sheen and 1px specular border.
+        return (null, null, false);
     }
 
     private float ResolveEffectiveSurfaceOpacity(float requestedOpacity)
@@ -1689,7 +1684,7 @@ public sealed class NotchAnimator : IDisposable
     private void UpdateContentCenterPoint()
     {
         float centerX = (float)(_layers.ContentHost.ActualWidth * 0.5);
-        float centerY = (float)(_layers.ContentHost.ActualHeight * 0.5);
+        float centerY = (float)(_currentTargetPillHeight * 0.5);
         _contentVisual.CenterPoint = new Vector3(centerX, centerY, 0.0f);
     }
 
@@ -1806,6 +1801,7 @@ public sealed class NotchAnimator : IDisposable
         _contentVisual.StopAnimation("Translation");
         _contentVisual.StopAnimation("Scale");
         _contentVisual.StopAnimation("Opacity");
+        _clockViewVisual.StopAnimation("Translation");
         _clockViewVisual.StopAnimation("Opacity");
         _clockViewVisual.StopAnimation("Scale");
         _clockHoverScreenshotActionVisual.StopAnimation("Opacity");
@@ -1875,7 +1871,7 @@ public sealed class NotchAnimator : IDisposable
         _borderShapeVisual.Dispose();
 
         _pillOffsetExpression.Dispose();
-        _contentTranslationExpression.Dispose();
+        _clockTranslationExpression.Dispose();
         _collapseEasing.Dispose();
         _geometricClip.Dispose();
         _pillGeometry.Dispose();

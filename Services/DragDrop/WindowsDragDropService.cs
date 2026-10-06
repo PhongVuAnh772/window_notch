@@ -163,6 +163,56 @@ public sealed class WindowsDragDropService : IDragDropService
         }
     }
 
+    public void OnExternalDragEnter()
+    {
+        if (_isDisposed || !CanAcceptDrag())
+        {
+            return;
+        }
+
+        _currentDragHasValidFile = true;
+        EnterDraggingState();
+    }
+
+    public void OnExternalDragLeave()
+    {
+        _currentDragHasValidFile = false;
+        if (_isDraggingOverPill)
+        {
+            LeaveDraggingState();
+        }
+    }
+
+    public bool TryAcceptDroppedFilePath(string? filePath)
+    {
+        bool wasDraggingOverPill = _isDraggingOverPill;
+        _currentDragHasValidFile = false;
+        _isDraggingOverPill = false;
+
+        if (_isDisposed || !CanAcceptDrag() || string.IsNullOrWhiteSpace(filePath))
+        {
+            if (wasDraggingOverPill)
+            {
+                RestorePreDragState();
+            }
+
+            return false;
+        }
+
+        if (!TryInspectFilesystemFileMetadata(filePath, out DroppedFileMetadata metadata))
+        {
+            if (wasDraggingOverPill)
+            {
+                RestorePreDragState();
+            }
+
+            return false;
+        }
+
+        PublishDroppedFileMetadata(metadata);
+        return true;
+    }
+
     public void Dispose()
     {
         if (_isDisposed)

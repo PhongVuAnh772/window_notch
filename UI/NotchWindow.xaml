@@ -13,21 +13,28 @@
         <!-- 1. Shadow / Depth Layer (Compositor DropShadow behind the pill surface) -->
         <Grid
             x:Name="ShadowLayer"
+            Width="{StaticResource NotchHostCanvasWidth}"
+            Height="{StaticResource NotchHostCanvasHeight}"
             HorizontalAlignment="Center"
             VerticalAlignment="Top"
             IsHitTestVisible="False" />
 
-        <!-- 2. Clipped Pill Surface Container -->
+        <!-- 2. Clipped Pill Surface Container (fixed max canvas so child views never overflow or shift XAML layout) -->
         <Grid
             x:Name="NotchSurface"
-            Width="{StaticResource NotchCollapsedWidth}"
-            Height="{StaticResource NotchCollapsedHeight}"
+            Width="{StaticResource NotchHostCanvasWidth}"
+            Height="{StaticResource NotchHostCanvasHeight}"
             Background="Transparent"
             HorizontalAlignment="Center"
             VerticalAlignment="Top"
+            AllowDrop="True"
             PointerEntered="OnNotchPointerEntered"
             PointerMoved="OnNotchPointerMoved"
-            PointerExited="OnNotchPointerExited">
+            PointerExited="OnNotchPointerExited"
+            DragEnter="OnNotchDragEnter"
+            DragOver="OnNotchDragOver"
+            DragLeave="OnNotchDragLeave"
+            Drop="OnNotchDrop">
 
             <!-- 2a. Optional Native Composition Glass Backdrop Layer -->
             <Grid
@@ -54,15 +61,18 @@
             <!-- 4. Content Layer (Clock View + Media Hover/Expanded View + Clipboard Hover View + Screenshot Hover View + DropTarget View + Calendar Hover View) -->
             <Grid
                 x:Name="ContentHost"
+                Width="{StaticResource NotchHostCanvasWidth}"
+                Height="{StaticResource NotchHostCanvasHeight}"
                 HorizontalAlignment="Center"
-                VerticalAlignment="Center">
+                VerticalAlignment="Top">
 
                 <!-- 4a. Clock View (Idle / Collapsed Media, Clipboard, Screenshot, Drop, or Calendar Indicator + Time) -->
                 <StackPanel
                     x:Name="ClockViewHost"
+                    Height="{StaticResource NotchCollapsedHeight}"
                     Orientation="Horizontal"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Top"
                     Spacing="{StaticResource Spacing8}"
                     IsHitTestVisible="False">
 
@@ -171,7 +181,7 @@
                     Height="{StaticResource NotchHoverHeight}"
                     Padding="{StaticResource ClockHoverPadding}"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Top"
                     Visibility="Collapsed"
                     IsHitTestVisible="False">
                     <Button
@@ -212,7 +222,7 @@
                     Height="{StaticResource NotchHoverHeight}"
                     Padding="{StaticResource MediaHoverPadding}"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center">
+                    VerticalAlignment="Top">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
@@ -523,7 +533,7 @@
                     Height="{StaticResource NotchHoverHeight}"
                     Padding="{StaticResource ClipboardHoverPadding}"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Top"
                     ColumnSpacing="{StaticResource Spacing8}"
                     IsHitTestVisible="False">
                     <Grid.ColumnDefinitions>
@@ -633,7 +643,7 @@
                     Height="{StaticResource NotchHoverHeight}"
                     Padding="{StaticResource ScreenshotHoverPadding}"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Top"
                     ColumnSpacing="{StaticResource Spacing8}"
                     IsHitTestVisible="False">
                     <Grid.ColumnDefinitions>
@@ -783,7 +793,7 @@
                     Height="{StaticResource NotchScreenshotHistoryHeight}"
                     Padding="{StaticResource ScreenshotHistoryPadding}"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Top"
                     RowSpacing="{StaticResource Spacing8}"
                     IsHitTestVisible="False">
                     <Grid.RowDefinitions>
@@ -1007,7 +1017,7 @@
                     Height="{StaticResource NotchDropTargetHeight}"
                     Padding="{StaticResource DropTargetPadding}"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Top"
                     IsHitTestVisible="False">
 
                     <!-- Mode 1: Active Drag Prompt ([↓] Drop file here) -->
@@ -1157,19 +1167,20 @@
                     </Grid>
                 </Grid>
 
-                <!-- 4f. Calendar Upcoming Event Hover Preview (220x44: [24x24 Calendar Icon Badge] + [Event Title + Time · Duration]) -->
+                <!-- 4f. Calendar Upcoming Event Hover Preview (220x44: [24x24 Calendar Icon Badge] + [Event Title + Time · Duration] + [Screenshot Action]) -->
                 <Grid
                     x:Name="CalendarHoverViewHost"
                     Width="{StaticResource NotchHoverWidth}"
                     Height="{StaticResource NotchHoverHeight}"
                     Padding="{StaticResource CalendarHoverPadding}"
                     HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
+                    VerticalAlignment="Top"
                     ColumnSpacing="{StaticResource Spacing8}"
                     IsHitTestVisible="False">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
                     <!-- 24x24 Rounded Calendar Badge -->
@@ -1222,6 +1233,37 @@
                             TextLineBounds="Tight"
                             Typography.NumeralAlignment="Tabular" />
                     </StackPanel>
+
+                    <!-- Subtle Screenshot Action Button in Calendar Hover -->
+                    <Button
+                        x:Name="CalendarScreenshotButton"
+                        Grid.Column="2"
+                        Style="{StaticResource NotchMediaTransportButtonStyle}"
+                        AutomationProperties.Name="Capture screenshot"
+                        VerticalAlignment="Center"
+                        Click="OnScreenshotCaptureButtonClick"
+                        PointerEntered="OnTransportButtonPointerEntered"
+                        PointerExited="OnTransportButtonPointerExited"
+                        PointerCanceled="OnTransportButtonPointerCanceled"
+                        PointerCaptureLost="OnTransportButtonPointerCaptureLost">
+                        <Grid
+                            Width="{StaticResource MediaControlButtonSize}"
+                            Height="{StaticResource MediaControlButtonSize}">
+                            <Border
+                                x:Name="CalendarScreenshotButtonBg"
+                                CornerRadius="{StaticResource Radius8}"
+                                Background="{StaticResource NotchElevatedBrush}" />
+                            <Path
+                                x:Name="CalendarScreenshotButtonIcon"
+                                Width="{StaticResource ScreenshotActionIconSize}"
+                                Height="{StaticResource ScreenshotActionIconSize}"
+                                Stretch="Uniform"
+                                Fill="{StaticResource NotchPrimaryBrush}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Data="F0 M 3.4,1.5 L 4.1,0.7 L 5.9,0.7 L 6.6,1.5 L 8.5,1.5 C 9.05,1.5 9.5,1.95 9.5,2.5 L 9.5,7.5 C 9.5,8.05 9.05,8.5 8.5,8.5 L 1.5,8.5 C 0.95,8.5 0.5,8.05 0.5,7.5 L 0.5,2.5 C 0.5,1.95 0.95,1.5 1.5,1.5 Z M 5,3.1 C 3.84,3.1 2.9,4.04 2.9,5.2 C 2.9,6.36 3.84,7.3 5,7.3 C 6.16,7.3 7.1,6.36 7.1,5.2 C 7.1,4.04 6.16,3.1 5,3.1 Z" />
+                        </Grid>
+                    </Button>
                 </Grid>
             </Grid>
         </Grid>
