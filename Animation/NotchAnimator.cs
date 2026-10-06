@@ -108,6 +108,7 @@ public sealed class NotchAnimator : IDisposable
 
     private readonly ExpressionAnimation _pillOffsetExpression;
     private readonly ExpressionAnimation _clockTranslationExpression;
+    private readonly ExpressionAnimation _hoverViewTranslationExpression;
     private readonly CubicBezierEasingFunction _collapseEasing;
 
     private double _currentTargetPillHeight = DesignTokens.NotchSize.CollapsedHeight;
@@ -137,6 +138,10 @@ public sealed class NotchAnimator : IDisposable
 
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.ContentHost, true);
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.ClockViewHost, true);
+        ElementCompositionPreview.SetIsTranslationEnabled(_layers.ClockHoverScreenshotActionHost, true);
+        ElementCompositionPreview.SetIsTranslationEnabled(_layers.ClipboardViewHost, true);
+        ElementCompositionPreview.SetIsTranslationEnabled(_layers.ScreenshotViewHost, true);
+        ElementCompositionPreview.SetIsTranslationEnabled(_layers.CalendarViewHost, true);
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.PrimaryClockText, true);
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.SecondaryClockText, true);
         ElementCompositionPreview.SetIsTranslationEnabled(_layers.SeekThumb, true);
@@ -173,34 +178,43 @@ public sealed class NotchAnimator : IDisposable
         _geometricClip = _compositor.CreateGeometricClip(_pillGeometry);
         _surfaceVisual.Clip = _geometricClip;
 
-        // 1. Pill horizontal centering & clock vertical centering inside the active pill height.
-        // ContentHost stays at (0,0) inside the top-aligned 452x172 canvas so every child view's XAML hit-testing
-        // matches its visual coordinates 1:1 without any translation mismatch.
+        // 1. Top-flush macOS Notch geometry:
+        // Shifting Offset.Y by -pill.CornerRadius.Y while extending Size.Y by +pill.CornerRadius.Y places the top rounded
+        // corners above Y=0 (clipped by the top screen edge), so the Notch docks flush into the top monitor bezel with
+        // vertical upper sides and lush rounded bottom-left/bottom-right corners, while visible height remains target.LogicalHeight.
         _pillOffsetExpression = _compositor.CreateExpressionAnimation(
-            "Vector2((canvasWidth - pill.Size.X) * 0.5f, 0.0f)");
+            "Vector2((canvasWidth - pill.Size.X) * 0.5f, -pill.CornerRadius.Y)");
         _pillOffsetExpression.SetReferenceParameter("pill", _pillGeometry);
 
         _clockTranslationExpression = _compositor.CreateExpressionAnimation(
-            "Vector3(0.0f, Max(0.0f, (pill.Size.Y - clockHeight) * 0.5f), 0.0f)");
+            "Vector3(0.0f, Clamp((pill.Size.Y - pill.CornerRadius.Y - clockHeight) * 0.5f, 0.0f, 8.0f), 0.0f)");
         _clockTranslationExpression.SetReferenceParameter("pill", _pillGeometry);
         _clockTranslationExpression.SetScalarParameter("clockHeight", (float)DesignTokens.NotchSize.CollapsedHeight);
         _clockViewVisual.StartAnimation("Translation", _clockTranslationExpression);
 
-        // 2. Soft Shadow layer bound to the morphing pill geometry (inset inside corner radius so rectangular
-        // DropShadow never pokes dark sharp corners outside the rounded pill silhouette).
+        _hoverViewTranslationExpression = _compositor.CreateExpressionAnimation(
+            "Vector3(0.0f, Clamp((pill.Size.Y - pill.CornerRadius.Y - hoverHeight) * 0.5f, -7.0f, 0.0f), 0.0f)");
+        _hoverViewTranslationExpression.SetReferenceParameter("pill", _pillGeometry);
+        _hoverViewTranslationExpression.SetScalarParameter("hoverHeight", (float)DesignTokens.NotchSize.HoverHeight);
+        _clockHoverScreenshotActionVisual.StartAnimation("Translation", _hoverViewTranslationExpression);
+        _clipboardViewVisual.StartAnimation("Translation", _hoverViewTranslationExpression);
+        _screenshotViewVisual.StartAnimation("Translation", _hoverViewTranslationExpression);
+        _calendarViewVisual.StartAnimation("Translation", _hoverViewTranslationExpression);
+
+        // 2. Soft Shadow layer bound to the visible portion of the morphing Notch silhouette.
         _dropShadow = _compositor.CreateDropShadow();
-        _dropShadow.Color = DesignTokens.Colors.Background;
+        _dropShadow.Color = Color.FromArgb(0xFF, 0x00, 0x00, 0x00);
 
         _shadowVisual = _compositor.CreateSpriteVisual();
         _shadowVisual.Shadow = _dropShadow;
         ElementCompositionPreview.SetElementChildVisual(_layers.ShadowLayer, _shadowVisual);
 
         _shadowSizeExpression = _compositor.CreateExpressionAnimation(
-            "Vector2(Max(0.0f, pill.Size.X - pill.CornerRadius.X * 1.1f), Max(0.0f, pill.Size.Y - pill.CornerRadius.Y * 0.85f))");
+            "Vector2(Max(0.0f, pill.Size.X - pill.CornerRadius.X * 1.15f), Max(0.0f, (pill.Size.Y - pill.CornerRadius.Y) - pill.CornerRadius.Y * 0.75f))");
         _shadowSizeExpression.SetReferenceParameter("pill", _pillGeometry);
 
         _shadowOffsetExpression = _compositor.CreateExpressionAnimation(
-            "Vector3(pill.Offset.X + pill.CornerRadius.X * 0.55f, pill.Offset.Y + pill.CornerRadius.Y * 0.425f, 0.0f)");
+            "Vector3(pill.Offset.X + pill.CornerRadius.X * 0.575f, pill.CornerRadius.Y * 0.5f, 0.0f)");
         _shadowOffsetExpression.SetReferenceParameter("pill", _pillGeometry);
 
         _shadowVisual.StartAnimation("Size", _shadowSizeExpression);
@@ -209,25 +223,20 @@ public sealed class NotchAnimator : IDisposable
         // 3. Native Composition glass backdrop with graceful fallback.
         (_glassBackdropVisual, _glassBackdropBrush, _hasGlassBackdrop) = TryCreateGlassBackdrop();
 
-        // 4. Subtle 1px vector pill border tracking _pillGeometry on the compositor thread.
-        float strokeWidth = DesignTokens.Surface.BorderStrokeThickness;
-        float halfStroke = strokeWidth * 0.5f;
+        // 4. Seamless 1px inner specular border tracking _pillGeometry in 1:1 lockstep.
+        // Using exact pill geometry with 2x stroke thickness clipped by _geometricClip guarantees the outer half is
+        // cleanly clipped away and the inner 1px stroke has zero sub-pixel gap or shimmer during spring morphing.
+        float innerBorderThickness = DesignTokens.Surface.BorderStrokeThickness * 2.0f;
 
         _borderGeometry = _compositor.CreateRoundedRectangleGeometry();
-        _borderSizeExpression = _compositor.CreateExpressionAnimation(
-            "pill.Size - Vector2(strokeWidth, strokeWidth)");
+        _borderSizeExpression = _compositor.CreateExpressionAnimation("pill.Size");
         _borderSizeExpression.SetReferenceParameter("pill", _pillGeometry);
-        _borderSizeExpression.SetScalarParameter("strokeWidth", strokeWidth);
 
-        _borderOffsetExpression = _compositor.CreateExpressionAnimation(
-            "pill.Offset + Vector2(halfStroke, halfStroke)");
+        _borderOffsetExpression = _compositor.CreateExpressionAnimation("pill.Offset");
         _borderOffsetExpression.SetReferenceParameter("pill", _pillGeometry);
-        _borderOffsetExpression.SetScalarParameter("halfStroke", halfStroke);
 
-        _borderRadiusExpression = _compositor.CreateExpressionAnimation(
-            "pill.CornerRadius - Vector2(halfStroke, halfStroke)");
+        _borderRadiusExpression = _compositor.CreateExpressionAnimation("pill.CornerRadius");
         _borderRadiusExpression.SetReferenceParameter("pill", _pillGeometry);
-        _borderRadiusExpression.SetScalarParameter("halfStroke", halfStroke);
 
         _borderGeometry.StartAnimation("Size", _borderSizeExpression);
         _borderGeometry.StartAnimation("Offset", _borderOffsetExpression);
@@ -235,7 +244,7 @@ public sealed class NotchAnimator : IDisposable
 
         _borderStrokeBrush = CreateBorderHighlightBrush();
         _borderSpriteShape = _compositor.CreateSpriteShape(_borderGeometry);
-        _borderSpriteShape.StrokeThickness = strokeWidth;
+        _borderSpriteShape.StrokeThickness = innerBorderThickness;
         _borderSpriteShape.StrokeBrush = _borderStrokeBrush;
 
         _borderShapeVisual = _compositor.CreateShapeVisual();
@@ -304,7 +313,7 @@ public sealed class NotchAnimator : IDisposable
         float radius = (float)initialDimensions.CornerRadius;
         _currentTargetPillHeight = initialDimensions.LogicalHeight;
 
-        _pillGeometry.Size = new Vector2(width, height);
+        _pillGeometry.Size = new Vector2(width, height + radius);
         _pillGeometry.CornerRadius = new Vector2(radius, radius);
 
         _surfaceBaseVisual.Opacity = ResolveEffectiveSurfaceOpacity(initialDimensions.SurfaceOpacity);
@@ -800,12 +809,9 @@ public sealed class NotchAnimator : IDisposable
             clockActionFade.Duration = switchDuration;
             clockActionFade.InsertKeyFrame(1.0f, showClockHoverScreenshotAction ? 1.0f : 0.0f, _collapseEasing);
 
-            Vector3KeyFrameAnimation clockActionScale = _compositor.CreateVector3KeyFrameAnimation();
-            clockActionScale.Duration = switchDuration;
-            clockActionScale.InsertKeyFrame(
-                1.0f,
+            SpringVector3NaturalMotionAnimation clockActionScale = CreateContentScaleSpring(
                 showClockHoverScreenshotAction ? Vector3.One : new Vector3(switchScale, switchScale, 1.0f),
-                _collapseEasing);
+                isEntering: showClockHoverScreenshotAction);
 
             _clockHoverScreenshotActionVisual.StartAnimation("Opacity", clockActionFade);
             _clockHoverScreenshotActionVisual.StartAnimation("Scale", clockActionScale);
@@ -828,12 +834,9 @@ public sealed class NotchAnimator : IDisposable
             timelineOpacity.Duration = timelineDuration;
             timelineOpacity.InsertKeyFrame(1.0f, showExpandedTimeline ? 1.0f : 0.0f, _collapseEasing);
 
-            Vector3KeyFrameAnimation timelineScale = _compositor.CreateVector3KeyFrameAnimation();
-            timelineScale.Duration = timelineDuration;
-            timelineScale.InsertKeyFrame(
-                1.0f,
+            SpringVector3NaturalMotionAnimation timelineScale = CreateContentScaleSpring(
                 showExpandedTimeline ? Vector3.One : new Vector3(switchScale, switchScale, 1.0f),
-                _collapseEasing);
+                isEntering: showExpandedTimeline);
 
             _mediaTimelineVisual.StartAnimation("Opacity", timelineOpacity);
             _mediaTimelineVisual.StartAnimation("Scale", timelineScale);
@@ -852,9 +855,9 @@ public sealed class NotchAnimator : IDisposable
             clockOpacityAnim.Duration = switchDuration;
             clockOpacityAnim.InsertKeyFrame(1.0f, clockTargetOpacity, _collapseEasing);
 
-            Vector3KeyFrameAnimation clockScaleAnim = _compositor.CreateVector3KeyFrameAnimation();
-            clockScaleAnim.Duration = switchDuration;
-            clockScaleAnim.InsertKeyFrame(1.0f, clockTargetScale, _collapseEasing);
+            SpringVector3NaturalMotionAnimation clockScaleAnim = CreateContentScaleSpring(
+                clockTargetScale,
+                isEntering: showClockView);
 
             _clockViewVisual.StartAnimation("Opacity", clockOpacityAnim);
             _clockViewVisual.StartAnimation("Scale", clockScaleAnim);
@@ -873,9 +876,9 @@ public sealed class NotchAnimator : IDisposable
             mediaOpacityAnim.Duration = switchDuration;
             mediaOpacityAnim.InsertKeyFrame(1.0f, mediaTargetOpacity, _collapseEasing);
 
-            Vector3KeyFrameAnimation mediaScaleAnim = _compositor.CreateVector3KeyFrameAnimation();
-            mediaScaleAnim.Duration = switchDuration;
-            mediaScaleAnim.InsertKeyFrame(1.0f, mediaTargetScale, _collapseEasing);
+            SpringVector3NaturalMotionAnimation mediaScaleAnim = CreateContentScaleSpring(
+                mediaTargetScale,
+                isEntering: showMediaView);
 
             _mediaViewVisual.StartAnimation("Opacity", mediaOpacityAnim);
             _mediaViewVisual.StartAnimation("Scale", mediaScaleAnim);
@@ -902,9 +905,9 @@ public sealed class NotchAnimator : IDisposable
             clipboardOpacityAnim.Duration = clipboardDuration;
             clipboardOpacityAnim.InsertKeyFrame(1.0f, clipboardTargetOpacity, _collapseEasing);
 
-            Vector3KeyFrameAnimation clipboardScaleAnim = _compositor.CreateVector3KeyFrameAnimation();
-            clipboardScaleAnim.Duration = clipboardDuration;
-            clipboardScaleAnim.InsertKeyFrame(1.0f, clipboardTargetScale, _collapseEasing);
+            SpringVector3NaturalMotionAnimation clipboardScaleAnim = CreateContentScaleSpring(
+                clipboardTargetScale,
+                isEntering: showClipboardView);
 
             _clipboardViewVisual.StartAnimation("Opacity", clipboardOpacityAnim);
             _clipboardViewVisual.StartAnimation("Scale", clipboardScaleAnim);
@@ -928,9 +931,9 @@ public sealed class NotchAnimator : IDisposable
             screenshotOpacityAnim.Duration = screenshotDuration;
             screenshotOpacityAnim.InsertKeyFrame(1.0f, screenshotTargetOpacity, _collapseEasing);
 
-            Vector3KeyFrameAnimation screenshotScaleAnim = _compositor.CreateVector3KeyFrameAnimation();
-            screenshotScaleAnim.Duration = screenshotDuration;
-            screenshotScaleAnim.InsertKeyFrame(1.0f, screenshotTargetScale, _collapseEasing);
+            SpringVector3NaturalMotionAnimation screenshotScaleAnim = CreateContentScaleSpring(
+                screenshotTargetScale,
+                isEntering: showScreenshotView);
 
             _screenshotViewVisual.StartAnimation("Opacity", screenshotOpacityAnim);
             _screenshotViewVisual.StartAnimation("Scale", screenshotScaleAnim);
@@ -954,9 +957,9 @@ public sealed class NotchAnimator : IDisposable
             screenshotHistoryOpacityAnim.Duration = screenshotHistoryDuration;
             screenshotHistoryOpacityAnim.InsertKeyFrame(1.0f, screenshotHistoryTargetOpacity, _collapseEasing);
 
-            Vector3KeyFrameAnimation screenshotHistoryScaleAnim = _compositor.CreateVector3KeyFrameAnimation();
-            screenshotHistoryScaleAnim.Duration = screenshotHistoryDuration;
-            screenshotHistoryScaleAnim.InsertKeyFrame(1.0f, screenshotHistoryTargetScale, _collapseEasing);
+            SpringVector3NaturalMotionAnimation screenshotHistoryScaleAnim = CreateContentScaleSpring(
+                screenshotHistoryTargetScale,
+                isEntering: showScreenshotHistoryView);
 
             _screenshotHistoryViewVisual.StartAnimation("Opacity", screenshotHistoryOpacityAnim);
             _screenshotHistoryViewVisual.StartAnimation("Scale", screenshotHistoryScaleAnim);
@@ -985,9 +988,9 @@ public sealed class NotchAnimator : IDisposable
             dropOpacityAnim.Duration = dropViewDuration;
             dropOpacityAnim.InsertKeyFrame(1.0f, dropTargetOpacity, _collapseEasing);
 
-            Vector3KeyFrameAnimation dropScaleAnim = _compositor.CreateVector3KeyFrameAnimation();
-            dropScaleAnim.Duration = dropViewDuration;
-            dropScaleAnim.InsertKeyFrame(1.0f, dropTargetScale, _collapseEasing);
+            SpringVector3NaturalMotionAnimation dropScaleAnim = CreateContentScaleSpring(
+                dropTargetScale,
+                isEntering: showDropTargetView);
 
             _dropTargetViewVisual.StartAnimation("Opacity", dropOpacityAnim);
             _dropTargetViewVisual.StartAnimation("Scale", dropScaleAnim);
@@ -1011,13 +1014,27 @@ public sealed class NotchAnimator : IDisposable
             calendarOpacityAnim.Duration = calendarDuration;
             calendarOpacityAnim.InsertKeyFrame(1.0f, calendarTargetOpacity, _collapseEasing);
 
-            Vector3KeyFrameAnimation calendarScaleAnim = _compositor.CreateVector3KeyFrameAnimation();
-            calendarScaleAnim.Duration = calendarDuration;
-            calendarScaleAnim.InsertKeyFrame(1.0f, calendarTargetScale, _collapseEasing);
+            SpringVector3NaturalMotionAnimation calendarScaleAnim = CreateContentScaleSpring(
+                calendarTargetScale,
+                isEntering: showCalendarView);
 
             _calendarViewVisual.StartAnimation("Opacity", calendarOpacityAnim);
             _calendarViewVisual.StartAnimation("Scale", calendarScaleAnim);
         }
+    }
+
+    private SpringVector3NaturalMotionAnimation CreateContentScaleSpring(Vector3 targetScale, bool isEntering)
+    {
+        SpringVector3NaturalMotionAnimation spring = _compositor.CreateSpringVector3Animation();
+        spring.FinalValue = targetScale;
+        spring.DampingRatio = isEntering
+            ? DesignTokens.Animation.HoverSpringDampingRatio
+            : DesignTokens.Animation.CollapseSpringDampingRatio;
+        spring.Period = TimeSpan.FromMilliseconds(
+            isEntering
+                ? DesignTokens.Animation.HoverSpringPeriodMs
+                : DesignTokens.Animation.CollapseSpringPeriodMs);
+        return spring;
     }
 
     /// <summary>
@@ -1529,13 +1546,17 @@ public sealed class NotchAnimator : IDisposable
         float dampingRatio,
         TimeSpan springPeriod)
     {
+        float width = (float)target.LogicalWidth;
+        float height = (float)target.LogicalHeight;
+        float radius = (float)target.CornerRadius;
+
         SpringVector2NaturalMotionAnimation sizeSpring = _compositor.CreateSpringVector2Animation();
-        sizeSpring.FinalValue = new Vector2((float)target.LogicalWidth, (float)target.LogicalHeight);
+        sizeSpring.FinalValue = new Vector2(width, height + radius);
         sizeSpring.DampingRatio = dampingRatio;
         sizeSpring.Period = springPeriod;
 
         SpringVector2NaturalMotionAnimation radiusSpring = _compositor.CreateSpringVector2Animation();
-        radiusSpring.FinalValue = new Vector2((float)target.CornerRadius, (float)target.CornerRadius);
+        radiusSpring.FinalValue = new Vector2(radius, radius);
         radiusSpring.DampingRatio = dampingRatio;
         radiusSpring.Period = springPeriod;
 
@@ -1551,31 +1572,12 @@ public sealed class NotchAnimator : IDisposable
 
     private void StartCollapseKeyFrameAnimations(NotchDimensions target, TimeSpan collapseDuration)
     {
-        Vector2KeyFrameAnimation sizeAnimation = _compositor.CreateVector2KeyFrameAnimation();
-        sizeAnimation.Duration = collapseDuration;
-        sizeAnimation.InsertKeyFrame(
-            1.0f,
-            new Vector2((float)target.LogicalWidth, (float)target.LogicalHeight),
-            _collapseEasing);
+        // Use critically-damped natural motion springs for collapse as well as expansion so rapid pointer
+        // entry/exit preserves instantaneous velocity on the Compositor thread just like macOS Dynamic Island/Notch.
+        TimeSpan collapseSpringPeriod = TimeSpan.FromMilliseconds(DesignTokens.Animation.CollapseSpringPeriodMs);
+        float collapseDamping = DesignTokens.Animation.CollapseSpringDampingRatio;
 
-        Vector2KeyFrameAnimation radiusAnimation = _compositor.CreateVector2KeyFrameAnimation();
-        radiusAnimation.Duration = collapseDuration;
-        radiusAnimation.InsertKeyFrame(
-            1.0f,
-            new Vector2((float)target.CornerRadius, (float)target.CornerRadius),
-            _collapseEasing);
-
-        Vector3KeyFrameAnimation scaleAnimation = _compositor.CreateVector3KeyFrameAnimation();
-        scaleAnimation.Duration = collapseDuration;
-        scaleAnimation.InsertKeyFrame(
-            1.0f,
-            new Vector3(target.ContentScale, target.ContentScale, 1.0f),
-            _collapseEasing);
-
-        _pillGeometry.StartAnimation("Size", sizeAnimation);
-        _pillGeometry.StartAnimation("CornerRadius", radiusAnimation);
-        _contentVisual.StartAnimation("Scale", scaleAnimation);
-
+        StartSpringGeometryAnimations(target, collapseDamping, collapseSpringPeriod);
         AnimateSurfaceAndDepthVisuals(target, collapseDuration);
     }
 
@@ -1646,16 +1648,26 @@ public sealed class NotchAnimator : IDisposable
             DesignTokens.Colors.Primary.G,
             DesignTokens.Colors.Primary.B);
 
+        Color sideColor = Color.FromArgb(
+            DesignTokens.Surface.BorderSideHighlightAlpha,
+            DesignTokens.Colors.Primary.R,
+            DesignTokens.Colors.Primary.G,
+            DesignTokens.Colors.Primary.B);
+
         Color bottomColor = Color.FromArgb(
             DesignTokens.Surface.BorderBottomHighlightAlpha,
             DesignTokens.Colors.Secondary.R,
             DesignTokens.Colors.Secondary.G,
             DesignTokens.Colors.Secondary.B);
 
-        CompositionColorGradientStop topStop = _compositor.CreateColorGradientStop(0.0f, topColor);
+        // 0.0..0.22 is near/above the top bezel (Y <= 0): keep alpha 0 so the top join into the bezel is invisible.
+        // 0.55..1.0 wraps the vertical sides and rounded bottom corners with a crisp macOS specular glass rim.
+        CompositionColorGradientStop topStop = _compositor.CreateColorGradientStop(0.22f, topColor);
+        CompositionColorGradientStop sideStop = _compositor.CreateColorGradientStop(0.55f, sideColor);
         CompositionColorGradientStop bottomStop = _compositor.CreateColorGradientStop(1.0f, bottomColor);
 
         gradientBrush.ColorStops.Add(topStop);
+        gradientBrush.ColorStops.Add(sideStop);
         gradientBrush.ColorStops.Add(bottomStop);
         return gradientBrush;
     }
@@ -1804,6 +1816,7 @@ public sealed class NotchAnimator : IDisposable
         _clockViewVisual.StopAnimation("Translation");
         _clockViewVisual.StopAnimation("Opacity");
         _clockViewVisual.StopAnimation("Scale");
+        _clockHoverScreenshotActionVisual.StopAnimation("Translation");
         _clockHoverScreenshotActionVisual.StopAnimation("Opacity");
         _clockHoverScreenshotActionVisual.StopAnimation("Scale");
         _collapsedMediaIndicatorVisual.StopAnimation("Opacity");
@@ -1822,8 +1835,10 @@ public sealed class NotchAnimator : IDisposable
         _mediaControlsVisual.StopAnimation("Scale");
         _mediaTimelineVisual.StopAnimation("Opacity");
         _mediaTimelineVisual.StopAnimation("Scale");
+        _clipboardViewVisual.StopAnimation("Translation");
         _clipboardViewVisual.StopAnimation("Opacity");
         _clipboardViewVisual.StopAnimation("Scale");
+        _screenshotViewVisual.StopAnimation("Translation");
         _screenshotViewVisual.StopAnimation("Opacity");
         _screenshotViewVisual.StopAnimation("Scale");
         _screenshotHistoryViewVisual.StopAnimation("Opacity");
@@ -1834,6 +1849,7 @@ public sealed class NotchAnimator : IDisposable
         _dropTargetPromptVisual.StopAnimation("Scale");
         _dropPreviewContentVisual.StopAnimation("Opacity");
         _dropPreviewContentVisual.StopAnimation("Scale");
+        _calendarViewVisual.StopAnimation("Translation");
         _calendarViewVisual.StopAnimation("Opacity");
         _calendarViewVisual.StopAnimation("Scale");
 
@@ -1872,6 +1888,7 @@ public sealed class NotchAnimator : IDisposable
 
         _pillOffsetExpression.Dispose();
         _clockTranslationExpression.Dispose();
+        _hoverViewTranslationExpression.Dispose();
         _collapseEasing.Dispose();
         _geometricClip.Dispose();
         _pillGeometry.Dispose();

@@ -14,9 +14,9 @@
     <x:Double x:Key="FontSizeHero">24</x:Double>
 
     <!-- Colors (.antigravity/design.md) -->
-    <Color x:Key="NotchBackgroundColor">#FF0D0D0F</Color>
-    <Color x:Key="NotchSurfaceColor">#FF171719</Color>
-    <Color x:Key="NotchElevatedColor">#FF222225</Color>
+    <Color x:Key="NotchBackgroundColor">#FF050507</Color>
+    <Color x:Key="NotchSurfaceColor">#FF0F0F13</Color>
+    <Color x:Key="NotchElevatedColor">#FF1B1B20</Color>
     <Color x:Key="NotchPrimaryColor">#FFFFFFFF</Color>
     <Color x:Key="NotchSecondaryColor">#FFA1A1AA</Color>
     <Color x:Key="NotchTertiaryColor">#FF71717A</Color>
@@ -29,17 +29,19 @@
     <SolidColorBrush x:Key="NotchSecondaryBrush" Color="{StaticResource NotchSecondaryColor}" />
     <SolidColorBrush x:Key="NotchTertiaryBrush" Color="{StaticResource NotchTertiaryColor}" />
     <SolidColorBrush x:Key="NotchAccentBrush" Color="{StaticResource NotchAccentColor}" />
+    <SolidColorBrush x:Key="NotchSubtleCardBorderBrush" Color="#1FFFFFFF" />
     <SolidColorBrush x:Key="ScreenshotHistoryThumbnailBorderBrush" Color="#26FFFFFF" />
     <SolidColorBrush x:Key="ScreenshotHistoryThumbnailSelectedBorderBrush" Color="{StaticResource NotchAccentColor}" />
 
     <!-- Subtle Surface & Inner Depth Brushes (.antigravity/design.md) -->
     <LinearGradientBrush x:Key="NotchSurfaceGlassBrush" StartPoint="0.5,0" EndPoint="0.5,1">
         <GradientStop Color="{StaticResource NotchBackgroundColor}" Offset="0.0" />
+        <GradientStop Color="#FF08080B" Offset="0.45" />
         <GradientStop Color="{StaticResource NotchSurfaceColor}" Offset="1.0" />
     </LinearGradientBrush>
 
     <LinearGradientBrush x:Key="NotchInnerDepthBrush" StartPoint="0.5,0" EndPoint="0.5,1">
-        <GradientStop Color="#000D0D0F" Offset="0.35" />
+        <GradientStop Color="#00050507" Offset="0.45" />
         <GradientStop Color="{StaticResource NotchElevatedColor}" Offset="1.0" />
     </LinearGradientBrush>
 

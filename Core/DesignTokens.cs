@@ -25,9 +25,9 @@ public static class DesignTokens
 
     public static class Colors
     {
-        public static readonly Color Background = Color.FromArgb(0xFF, 0x0D, 0x0D, 0x0F);
-        public static readonly Color Surface = Color.FromArgb(0xFF, 0x17, 0x17, 0x19);
-        public static readonly Color Elevated = Color.FromArgb(0xFF, 0x22, 0x22, 0x25);
+        public static readonly Color Background = Color.FromArgb(0xFF, 0x05, 0x05, 0x07);
+        public static readonly Color Surface = Color.FromArgb(0xFF, 0x0F, 0x0F, 0x13);
+        public static readonly Color Elevated = Color.FromArgb(0xFF, 0x1B, 0x1B, 0x20);
         public static readonly Color Primary = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
         public static readonly Color Secondary = Color.FromArgb(0xFF, 0xA1, 0xA1, 0xAA);
         public static readonly Color Tertiary = Color.FromArgb(0xFF, 0x71, 0x71, 0x7A);
@@ -80,31 +80,34 @@ public static class DesignTokens
     public static class Animation
     {
         public const int IdleToHoverDurationMs = 200;
-        public const int HoverToIdleDurationMs = 220;
-        public const int HoverToExpandedDurationMs = 260;
-        public const int ExpandedToHoverDurationMs = 220;
-        public const int MouseLeaveGraceDelayMs = 300;
+        public const int HoverToIdleDurationMs = 200;
+        public const int HoverToExpandedDurationMs = 240;
+        public const int ExpandedToHoverDurationMs = 200;
+        public const int MouseLeaveGraceDelayMs = 260;
 
         public const int DragEnterDurationMs = 180;
         public const int DropSuccessDurationMs = 160;
         public const int DragLeaveDurationMs = 200;
 
-        public const float HoverSpringDampingRatio = 0.82f;
-        public const int HoverSpringPeriodMs = 100;
+        public const float HoverSpringDampingRatio = 0.85f;
+        public const int HoverSpringPeriodMs = 75;
 
-        public const float ExpandedSpringDampingRatio = 0.85f;
-        public const int ExpandedSpringPeriodMs = 120;
+        public const float ExpandedSpringDampingRatio = 0.86f;
+        public const int ExpandedSpringPeriodMs = 85;
 
-        public const float CollapseBezierX1 = 0.25f;
-        public const float CollapseBezierY1 = 0.10f;
-        public const float CollapseBezierX2 = 0.25f;
+        public const float CollapseSpringDampingRatio = 0.92f;
+        public const int CollapseSpringPeriodMs = 70;
+
+        public const float CollapseBezierX1 = 0.22f;
+        public const float CollapseBezierY1 = 1.00f;
+        public const float CollapseBezierX2 = 0.36f;
         public const float CollapseBezierY2 = 1.00f;
 
         public const float IdleContentScale = 1.00f;
-        public const float HoverContentScale = 1.02f;
+        public const float HoverContentScale = 1.00f;
         public const float ExpandedContentScale = 1.00f;
 
-        public const float IdleContentOpacity = 0.92f;
+        public const float IdleContentOpacity = 0.96f;
         public const float HoverContentOpacity = 1.00f;
         public const float ExpandedContentOpacity = 1.00f;
 
@@ -115,8 +118,8 @@ public static class DesignTokens
         public const float MinuteChangeSlideOffsetPx = 3.0f;
 
         public const int ContentSwitchDurationMs = 180;
-        public const int ContentSwitchDisappearDurationMs = 140;
-        public const float ContentSwitchScale = 0.96f;
+        public const int ContentSwitchDisappearDurationMs = 120;
+        public const float ContentSwitchScale = 0.94f;
     }
 
     public static class Media
@@ -273,28 +276,29 @@ public static class DesignTokens
 
     public static class Surface
     {
-        public const float IdleSurfaceOpacity = 0.94f;
-        public const float HoverSurfaceOpacity = 0.98f;
-        public const float ExpandedSurfaceOpacity = 0.99f;
+        public const float IdleSurfaceOpacity = 0.96f;
+        public const float HoverSurfaceOpacity = 0.99f;
+        public const float ExpandedSurfaceOpacity = 1.00f;
 
-        public const float IdleInnerDepthOpacity = 0.32f;
-        public const float HoverInnerDepthOpacity = 0.52f;
-        public const float ExpandedInnerDepthOpacity = 0.58f;
+        public const float IdleInnerDepthOpacity = 0.20f;
+        public const float HoverInnerDepthOpacity = 0.34f;
+        public const float ExpandedInnerDepthOpacity = 0.40f;
 
         public const float BorderStrokeThickness = 1.0f;
-        public const float IdleBorderOpacity = 0.12f;
-        public const float HoverBorderOpacity = 0.18f;
-        public const float ExpandedBorderOpacity = 0.22f;
-        public const byte BorderTopHighlightAlpha = 0x55;
+        public const float IdleBorderOpacity = 0.18f;
+        public const float HoverBorderOpacity = 0.26f;
+        public const float ExpandedBorderOpacity = 0.30f;
+        public const byte BorderTopHighlightAlpha = 0x00;
+        public const byte BorderSideHighlightAlpha = 0x99;
         public const byte BorderBottomHighlightAlpha = 0xFF;
 
         public const float IdleShadowBlurRadius = 14.0f;
         public const float HoverShadowBlurRadius = 22.0f;
         public const float ExpandedShadowBlurRadius = 26.0f;
 
-        public const float IdleShadowOpacity = 0.26f;
-        public const float HoverShadowOpacity = 0.40f;
-        public const float ExpandedShadowOpacity = 0.46f;
+        public const float IdleShadowOpacity = 0.28f;
+        public const float HoverShadowOpacity = 0.42f;
+        public const float ExpandedShadowOpacity = 0.48f;
 
         public const float IdleShadowOffsetY = 2.0f;
         public const float HoverShadowOffsetY = 4.0f;

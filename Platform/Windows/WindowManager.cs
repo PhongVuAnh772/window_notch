@@ -48,6 +48,8 @@ public sealed class WindowManager : IDisposable
 
     private static readonly nint WS_POPUP = unchecked((int)0x80000000);
     private const nint WS_CAPTION = 0x00C00000;
+    private const nint WS_BORDER = 0x00800000;
+    private const nint WS_DLGFRAME = 0x00400000;
     private const nint WS_THICKFRAME = 0x00040000;
     private const nint WS_MINIMIZEBOX = 0x00020000;
     private const nint WS_MAXIMIZEBOX = 0x00010000;
@@ -69,6 +71,7 @@ public sealed class WindowManager : IDisposable
     private const uint SWP_HIDEWINDOW = 0x0080;
     private const int SW_HIDE = 0;
 
+    private const uint WM_PAINT = 0x000F;
     private const uint WM_CLOSE = 0x0010;
     private const uint WM_NCCALCSIZE = 0x0083;
     private const uint WM_NCHITTEST = 0x0084;
@@ -78,10 +81,12 @@ public sealed class WindowManager : IDisposable
     private const uint WM_SETTINGCHANGE = 0x001A;
     private const uint WM_HOTKEY = 0x0312;
     private const uint WM_CLIPBOARDUPDATE = 0x031D;
+    private const uint WM_DWMCOMPOSITIONCHANGED = 0x031E;
     private const uint WM_APP = 0x8000;
     private const uint TrayCallbackMessage = WM_APP + 1;
     private const nuint SPI_SETWORKAREA = 0x002F;
     private const nint HTTRANSPARENT = -1;
+    private const int BLACK_BRUSH = 4;
 
     private const uint MONITOR_DEFAULTTOPRIMARY = 0x00000001;
     private const int MDT_EFFECTIVE_DPI = 0;
@@ -121,8 +126,7 @@ public sealed class WindowManager : IDisposable
     private MonitorWorkArea _cachedWorkArea;
     private bool _hasCachedWorkArea;
     private MonitorPlacementTarget _monitorTarget = MonitorPlacementTarget.Primary;
-    private nint _blackGdiBrush = nint.Zero;
-    private global::Windows.UI.Composition.CompositionColorBrush? _fallbackTransparentBrush;
+    private global::Windows.UI.Composition.CompositionColorBrush? _transparentBackdropBrush;
 
     public WindowManager(Window window)
     {
@@ -434,6 +438,15 @@ public sealed class WindowManager : IDisposable
         _appWindow.Closing -= OnAppWindowClosing;
         _appWindow.Closing += OnAppWindowClosing;
 
+        try
+        {
+            _window.ExtendsContentIntoTitleBar = true;
+        }
+        catch
+        {
+            // Ignore if custom title bar extension is not supported in the current presenter state.
+        }
+
         if (_appWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.IsAlwaysOnTop = true;
@@ -465,9 +478,10 @@ public sealed class WindowManager : IDisposable
 
     private void ConfigureWin32WindowStyles()
     {
+        // Strip WS_DLGFRAME, WS_BORDER, WS_CAPTION, and WS_THICKFRAME (NonResizableWindowWhiteBorderWorkaround)
+        // without forcing WS_POPUP so OverlappedPresenter + ExtendsContentIntoTitleBar remain completely borderless.
         nint style = GetWindowLongPtr(_hwnd, GWL_STYLE);
-        style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
-        style |= WS_POPUP;
+        style &= ~(WS_CAPTION | WS_BORDER | WS_DLGFRAME | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_POPUP);
         SetWindowLongPtr(_hwnd, GWL_STYLE, style);
 
         // WS_EX_TOOLWINDOW prevents taskbar button creation; WS_EX_NOACTIVATE prevents stealing focus.
@@ -488,27 +502,18 @@ public sealed class WindowManager : IDisposable
 
     private void ConfigurePerPixelTransparency()
     {
-        // Suppress WinUI 3's default opaque theme background fill on the root visual.
+        // Directly attach a transparent Windows.UI.Composition.CompositionColorBrush to ICompositionSupportsSystemBackdrop
+        // so WinUI 3's root visual never renders an opaque white/dark rectangular backdrop behind the Notch pill.
         try
         {
-            if (_window.SystemBackdrop is not TransparentWindowBackdrop)
-            {
-                _window.SystemBackdrop = new TransparentWindowBackdrop();
-            }
+            var brushHolder = _window.As<ICompositionSupportsSystemBackdrop>();
+            _transparentBackdropBrush ??= TransparentWindowBackdrop.SystemCompositor.CreateColorBrush(
+                global::Windows.UI.Color.FromArgb(0, 255, 255, 255));
+            brushHolder.SystemBackdrop = _transparentBackdropBrush;
         }
         catch
         {
-            try
-            {
-                var backdropTarget = _window.As<ICompositionSupportsSystemBackdrop>();
-                _fallbackTransparentBrush ??= TransparentWindowBackdrop.SystemCompositor.CreateColorBrush(
-                    global::Windows.UI.Color.FromArgb(0, 0, 0, 0));
-                backdropTarget.SystemBackdrop = _fallbackTransparentBrush;
-            }
-            catch
-            {
-                // Ignore if backdrop target cannot be queried at this moment.
-            }
+            // Ignore if ICompositionSupportsSystemBackdrop is temporarily unavailable.
         }
 
         // Suppress Windows 11 DWM outer rectangular border and system corner rounding on the host HWND.
@@ -529,14 +534,14 @@ public sealed class WindowManager : IDisposable
                 sizeof(uint));
         }
 
-        // Extend DWM sheet across the entire client area and attach an empty blur region
-        // so DirectComposition alpha outside the pill Border composites transparently over the desktop.
+        // Reset DWM non-client frame margins to 0 (do NOT pass -1, which draws the white non-client sheet on Win11)
+        // and attach an empty (-2,-2,-1,-1) blur region so DirectComposition per-pixel alpha composites over the desktop.
         MARGINS margins = new()
         {
-            cxLeftWidth = -1,
-            cxRightWidth = -1,
-            cyTopHeight = -1,
-            cyBottomHeight = -1
+            cxLeftWidth = 0,
+            cxRightWidth = 0,
+            cyTopHeight = 0,
+            cyBottomHeight = 0
         };
         DwmExtendFrameIntoClientArea(_hwnd, ref margins);
 
@@ -572,18 +577,19 @@ public sealed class WindowManager : IDisposable
                 ReleaseDC(_hwnd, hdc);
             }
         }
+
+        _ = InvalidateRect(_hwnd, nint.Zero, true);
     }
 
     private void ClearClientBackground(nint hdc)
     {
-        if (GetClientRect(_hwnd, out RECT rect))
+        if (hdc != nint.Zero && GetClientRect(_hwnd, out RECT rect))
         {
-            if (_blackGdiBrush == nint.Zero)
+            nint blackBrush = GetStockObject(BLACK_BRUSH);
+            if (blackBrush != nint.Zero)
             {
-                _blackGdiBrush = CreateSolidBrush(0);
+                FillRect(hdc, ref rect, blackBrush);
             }
-
-            FillRect(hdc, ref rect, _blackGdiBrush);
         }
     }
 
@@ -702,10 +708,33 @@ public sealed class WindowManager : IDisposable
                 }
                 break;
 
+            case WM_PAINT:
+            {
+                // Intercept WinUI 3's default WM_PAINT (which fills the HWND redirection bitmap opaque white)
+                // and fill with stock BLACK_BRUSH (0x00000000 = premultiplied alpha 0 = 100% transparent).
+                nint hdc = BeginPaint(hWnd, out PAINTSTRUCT ps);
+                if (hdc != nint.Zero)
+                {
+                    nint blackBrush = GetStockObject(BLACK_BRUSH);
+                    if (blackBrush != nint.Zero)
+                    {
+                        FillRect(hdc, ref ps.rcPaint, blackBrush);
+                    }
+
+                    EndPaint(hWnd, ref ps);
+                }
+
+                return 1;
+            }
+
             case WM_ERASEBKGND:
                 // Clear GDI background to 0x00000000 so DWM composites the non-pill client area transparently.
                 ClearClientBackground((nint)wParam);
                 return 1;
+
+            case WM_DWMCOMPOSITIONCHANGED:
+                ConfigurePerPixelTransparency();
+                return 0;
 
             case WM_DPICHANGED:
                 RefreshMonitorWorkArea(_monitorTarget);
@@ -775,13 +804,20 @@ public sealed class WindowManager : IDisposable
             _isSubclassed = false;
         }
 
-        _fallbackTransparentBrush?.Dispose();
-        _fallbackTransparentBrush = null;
-
-        if (_blackGdiBrush != nint.Zero)
+        if (_transparentBackdropBrush is not null)
         {
-            DeleteObject(_blackGdiBrush);
-            _blackGdiBrush = nint.Zero;
+            try
+            {
+                var brushHolder = _window.As<ICompositionSupportsSystemBackdrop>();
+                brushHolder.SystemBackdrop = null;
+            }
+            catch
+            {
+                // Ignore during window teardown.
+            }
+
+            _transparentBackdropBrush.Dispose();
+            _transparentBackdropBrush = null;
         }
 
         _isDisposed = true;
@@ -809,6 +845,24 @@ public sealed class WindowManager : IDisposable
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PAINTSTRUCT
+    {
+        public nint hdc;
+        public int fErase;
+        public RECT rcPaint;
+        public int fRestore;
+        public int fIncUpdate;
+        private int _rgbReserved0;
+        private int _rgbReserved1;
+        private int _rgbReserved2;
+        private int _rgbReserved3;
+        private int _rgbReserved4;
+        private int _rgbReserved5;
+        private int _rgbReserved6;
+        private int _rgbReserved7;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -930,7 +984,18 @@ public sealed class WindowManager : IDisposable
     private static extern bool DeleteObject(nint hObject);
 
     [DllImport("gdi32.dll")]
-    private static extern nint CreateSolidBrush(uint crColor);
+    private static extern nint GetStockObject(int fnObject);
+
+    [DllImport("user32.dll")]
+    private static extern nint BeginPaint(nint hWnd, out PAINTSTRUCT lpPaint);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EndPaint(nint hWnd, ref PAINTSTRUCT lpPaint);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool InvalidateRect(nint hWnd, nint lpRect, [MarshalAs(UnmanagedType.Bool)] bool bErase);
 
     [DllImport("user32.dll")]
     private static extern int FillRect(nint hDC, ref RECT lprc, nint hbr);
@@ -969,17 +1034,15 @@ public sealed class WindowManager : IDisposable
 }
 
 /// <summary>
-/// Custom <see cref="SystemBackdrop"/> that attaches a transparent <see cref="global::Windows.UI.Composition.CompositionColorBrush"/>
-/// to the WinUI 3 window so areas outside the Notch pill render 100% per-pixel transparent.
-/// Must be a <c>public partial</c> class at namespace scope for CsWinRT projection marshaling.
+/// Provides a thread-bound <see cref="global::Windows.UI.Composition.Compositor"/> for creating the transparent
+/// <see cref="ICompositionSupportsSystemBackdrop"/> brush on the WinUI 3 Notch window.
 /// </summary>
 public sealed partial class TransparentWindowBackdrop : SystemBackdrop
 {
     private static readonly object SyncLock = new();
-    private static nint _dispatcherQueueController;
+    private static global::Windows.System.DispatcherQueue? _dispatcherQueue;
+    private static global::Windows.System.DispatcherQueueController? _dispatcherQueueController;
     private static global::Windows.UI.Composition.Compositor? _systemCompositor;
-
-    private global::Windows.UI.Composition.CompositionColorBrush? _brush;
 
     internal static global::Windows.UI.Composition.Compositor SystemCompositor
     {
@@ -991,7 +1054,8 @@ public sealed partial class TransparentWindowBackdrop : SystemBackdrop
                 {
                     if (_systemCompositor is null)
                     {
-                        EnsureDispatcherQueueController();
+                        _dispatcherQueue = global::Windows.System.DispatcherQueue.GetForCurrentThread()
+                            ?? (_dispatcherQueueController = InitializeCoreDispatcher()).DispatcherQueue;
                         _systemCompositor = new global::Windows.UI.Composition.Compositor();
                     }
                 }
@@ -1001,50 +1065,17 @@ public sealed partial class TransparentWindowBackdrop : SystemBackdrop
         }
     }
 
-    protected override void OnDefaultSystemBackdropConfigurationChanged(
-        ICompositionSupportsSystemBackdrop target,
-        XamlRoot xamlRoot)
+    private static global::Windows.System.DispatcherQueueController InitializeCoreDispatcher()
     {
-        if (target is not null)
+        DispatcherQueueOptions options = new()
         {
-            base.OnDefaultSystemBackdropConfigurationChanged(target, xamlRoot);
-        }
-    }
+            dwSize = Marshal.SizeOf<DispatcherQueueOptions>(),
+            threadType = 2,    // DQTYPE_THREAD_CURRENT
+            apartmentType = 2  // DQTAT_COM_STA
+        };
 
-    protected override void OnTargetConnected(
-        ICompositionSupportsSystemBackdrop connectedTarget,
-        XamlRoot xamlRoot)
-    {
-        _brush = SystemCompositor.CreateColorBrush(global::Windows.UI.Color.FromArgb(0, 0, 0, 0));
-        connectedTarget.SystemBackdrop = _brush;
-        base.OnTargetConnected(connectedTarget, xamlRoot);
-    }
-
-    protected override void OnTargetDisconnected(
-        ICompositionSupportsSystemBackdrop disconnectedTarget)
-    {
-        var backdrop = disconnectedTarget.SystemBackdrop;
-        disconnectedTarget.SystemBackdrop = null;
-        backdrop?.Dispose();
-        _brush?.Dispose();
-        _brush = null;
-        base.OnTargetDisconnected(disconnectedTarget);
-    }
-
-    private static void EnsureDispatcherQueueController()
-    {
-        if (global::Windows.System.DispatcherQueue.GetForCurrentThread() is null &&
-            _dispatcherQueueController == nint.Zero)
-        {
-            DispatcherQueueOptions options = new()
-            {
-                dwSize = Marshal.SizeOf<DispatcherQueueOptions>(),
-                threadType = 2,    // DQTYPE_THREAD_CURRENT
-                apartmentType = 2  // DQTAT_COM_STA
-            };
-
-            CreateDispatcherQueueController(options, out _dispatcherQueueController);
-        }
+        CreateDispatcherQueueController(options, out nint raw);
+        return global::Windows.System.DispatcherQueueController.FromAbi(raw);
     }
 
     [StructLayout(LayoutKind.Sequential)]

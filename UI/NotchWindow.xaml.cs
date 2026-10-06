@@ -2325,6 +2325,7 @@ public sealed partial class NotchWindow : Window
             }
 
             bool leavingScreenshotHistory = e.PreviousState == NotchState.ScreenshotHistory;
+            bool leavingExpanded = e.PreviousState == NotchState.Expanded;
             _windowManager.SetInteractivePillBounds(target.LogicalWidth, target.LogicalHeight);
 
             _animator.TransitionToState(
@@ -2340,25 +2341,29 @@ public sealed partial class NotchWindow : Window
                 hasActiveDrag,
                 hasActiveDropPreview,
                 hasCalendarEvent,
-                onCompleted: leavingScreenshotHistory
+                onCompleted: (leavingScreenshotHistory || leavingExpanded)
                     ? () =>
                     {
-                        if (DispatcherQueue.HasThreadAccess)
+                        void CompleteCollapseCleanup()
                         {
-                            if (_controller.CurrentState != NotchState.ScreenshotHistory)
+                            if (leavingScreenshotHistory && _controller.CurrentState != NotchState.ScreenshotHistory)
                             {
                                 ReleaseDecodedScreenshotHistoryBitmaps();
                             }
+
+                            if (leavingExpanded && _controller.CurrentState != NotchState.Expanded)
+                            {
+                                ApplyMediaLayoutForState(NotchState.Hover);
+                            }
+                        }
+
+                        if (DispatcherQueue.HasThreadAccess)
+                        {
+                            CompleteCollapseCleanup();
                         }
                         else
                         {
-                            DispatcherQueue.TryEnqueue(() =>
-                            {
-                                if (_controller.CurrentState != NotchState.ScreenshotHistory)
-                                {
-                                    ReleaseDecodedScreenshotHistoryBitmaps();
-                                }
-                            });
+                            DispatcherQueue.TryEnqueue(CompleteCollapseCleanup);
                         }
                     }
                     : null);

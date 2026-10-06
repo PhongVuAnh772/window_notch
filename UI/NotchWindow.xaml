@@ -264,6 +264,8 @@
                                 Height="{StaticResource MediaHoverArtworkSize}"
                                 CornerRadius="{StaticResource Radius8}"
                                 Background="{StaticResource NotchElevatedBrush}"
+                                BorderBrush="{StaticResource NotchSubtleCardBorderBrush}"
+                                BorderThickness="1"
                                 VerticalAlignment="Center"
                                 IsHitTestVisible="False">
                                 <Grid>
@@ -550,6 +552,8 @@
                         Height="{StaticResource ClipboardHoverPreviewSize}"
                         CornerRadius="{StaticResource Radius8}"
                         Background="{StaticResource NotchElevatedBrush}"
+                        BorderBrush="{StaticResource NotchSubtleCardBorderBrush}"
+                        BorderThickness="1"
                         VerticalAlignment="Center"
                         IsHitTestVisible="False">
                         <Grid>
@@ -660,6 +664,8 @@
                         Height="{StaticResource ScreenshotHoverThumbnailHeight}"
                         CornerRadius="{StaticResource Radius8}"
                         Background="{StaticResource NotchElevatedBrush}"
+                        BorderBrush="{StaticResource NotchSubtleCardBorderBrush}"
+                        BorderThickness="1"
                         VerticalAlignment="Center"
                         IsHitTestVisible="False">
                         <Grid>
@@ -1033,6 +1039,8 @@
                             Height="{StaticResource DropTargetBadgeSize}"
                             CornerRadius="{StaticResource Radius8}"
                             Background="{StaticResource NotchElevatedBrush}"
+                            BorderBrush="{StaticResource NotchSubtleCardBorderBrush}"
+                            BorderThickness="1"
                             VerticalAlignment="Center">
                             <Path
                                 Width="{StaticResource DropTargetIconSize}"
@@ -1072,6 +1080,8 @@
                             Height="{StaticResource DropTargetBadgeSize}"
                             CornerRadius="{StaticResource Radius8}"
                             Background="{StaticResource NotchElevatedBrush}"
+                            BorderBrush="{StaticResource NotchSubtleCardBorderBrush}"
+                            BorderThickness="1"
                             VerticalAlignment="Center">
                             <Grid>
                                 <!-- Generic File Icon -->
@@ -1191,6 +1201,8 @@
                         Height="{StaticResource CalendarHoverIconSize}"
                         CornerRadius="{StaticResource Radius8}"
                         Background="{StaticResource NotchElevatedBrush}"
+                        BorderBrush="{StaticResource NotchSubtleCardBorderBrush}"
+                        BorderThickness="1"
                         VerticalAlignment="Center"
                         IsHitTestVisible="False">
                         <Path

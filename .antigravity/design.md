@@ -24,13 +24,13 @@ Weights:
 ## Colors
 
 Background:
-#0D0D0F
+#050507
 
 Surface:
-#171719
+#0F0F13
 
 Elevated:
-#222225
+#1B1B20
 
 Primary:
 #FFFFFF
@@ -98,26 +98,32 @@ Idle to Hover Duration:
 200ms
 
 Hover to Idle Duration:
-220ms
+200ms
 
 Mouse Leave Grace Delay:
-300ms
+260ms
 
 Spring Damping Ratio (Hover Expand):
-0.82
+0.85
 
 Spring Period (Hover Expand):
-100ms
+75ms
+
+Spring Damping Ratio (Collapse):
+0.92
+
+Spring Period (Collapse):
+70ms
 
 Collapse Cubic Bezier:
-(0.25, 0.10, 0.25, 1.00)
+(0.22, 1.00, 0.36, 1.00)
 
 Content Scale:
 1.00 — Idle
-1.02 — Hover
+1.00 — Hover
 
 Content Opacity:
-0.92 — Idle
+0.96 — Idle
 1.00 — Hover
 
 Spring Overscan Allowance (prevents clipping during subtle spring overshoot):
@@ -134,10 +140,10 @@ Content Switch Appear Duration (Clock → Media):
 180ms
 
 Content Switch Disappear Duration (Media → Clock):
-140ms
+120ms
 
 Content Switch Scale (Subtle Morph):
-0.96
+0.94
 
 ---
 
@@ -207,16 +213,16 @@ Media Expanded Artwork Radius:
 8
 
 Hover to Expanded Duration:
-260ms
+240ms
 
 Expanded to Hover Duration:
-220ms
+200ms
 
 Expanded Spring Damping Ratio:
-0.85
+0.86
 
 Expanded Spring Period:
-120ms
+85ms
 
 Seek Bar Track Height:
 3px
@@ -409,26 +415,27 @@ Interaction Refresh Cooldown:
 ## Surface, Border & Shadow Tokens
 
 Surface Opacity:
-0.94 — Idle
-0.98 — Hover
-0.99 — Expanded
+0.97 — Idle
+0.99 — Hover
+1.00 — Expanded
 
 Inner Depth Sheen Opacity:
-0.32 — Idle
-0.52 — Hover
-0.58 — Expanded
+0.22 — Idle
+0.34 — Hover
+0.42 — Expanded
 
 Border Stroke Width:
 1px
 
 Border Opacity:
-0.12 — Idle
-0.18 — Hover
-0.22 — Expanded
+0.16 — Idle
+0.24 — Hover
+0.30 — Expanded
 
-Border Highlight Alpha (Top / Bottom):
-0xFF — Top Stop
-0x55 — Bottom Stop
+Border Highlight Alpha (Top / Side / Bottom):
+0x00 — Top Stop (flush with top screen bezel)
+0x99 — Side Stop
+0xFF — Bottom Stop
 
 Shadow Blur Radius:
 14px — Idle
