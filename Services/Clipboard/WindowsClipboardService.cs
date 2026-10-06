@@ -70,7 +70,15 @@ public sealed class WindowsClipboardService : IClipboardService
             // Record baseline sequence number at startup so stale pre-launch clipboard content
             // does not immediately override Calendar, DropPreview, or Screenshot indicators.
             // Only new clipboard updates (WM_CLIPBOARDUPDATE) during the app session are published.
-            _lastSequenceNumber = SafeGetClipboardSequenceNumber();
+            try
+            {
+                _lastSequenceNumber = GetClipboardSequenceNumber();
+            }
+            catch
+            {
+                _lastSequenceNumber = 0;
+            }
+
             _isRunning = true;
         }
     }
